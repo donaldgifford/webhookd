@@ -352,63 +352,63 @@ this impl doc; not in DESIGN-0001 explicitly).
 
 **Signature module — `internal/webhook/signature.go`:**
 
-- [ ] Implement `VerifyHMAC(secret []byte, canonical []byte, received string) error`:
-  - [ ] Parse `received` of form `sha256=<hex>` (return `ErrMalformed`
+- [x] Implement `VerifyHMAC(secret []byte, canonical []byte, received string) error`:
+  - [x] Parse `received` of form `sha256=<hex>` (return `ErrMalformed`
         for any other shape).
-  - [ ] Compute `hmac.New(sha256.New, secret)` over `canonical`.
-  - [ ] `hmac.Equal` for timing-safe compare.
-  - [ ] Return `nil` on success, typed error on failure
+  - [x] Compute `hmac.New(sha256.New, secret)` over `canonical`.
+  - [x] `hmac.Equal` for timing-safe compare.
+  - [x] Return `nil` on success, typed error on failure
         (`ErrInvalidSignature`).
-- [ ] Implement `VerifyTimestamp(headerVal string, now time.Time, skew time.Duration) error`:
-  - [ ] Parse Unix seconds; reject anything older or newer than `skew`.
-  - [ ] Return typed errors (`ErrTimestampMissing`,
+- [x] Implement `VerifyTimestamp(headerVal string, now time.Time, skew time.Duration) error`:
+  - [x] Parse Unix seconds; reject anything older or newer than `skew`.
+  - [x] Return typed errors (`ErrTimestampMissing`,
         `ErrTimestampMalformed`, `ErrTimestampSkewed`).
-- [ ] Implement a per-handler `Verify(secret, sigHeader, tsHeader, body, now, skew) error`
+- [x] Implement a per-handler `Verify(secret, sigHeader, tsHeader, body, now, skew) error`
       that composes the two: build canonical = `"v0:" + tsHeader + ":" + body`
       (Slack-style with a version prefix so the scheme can be revved later
       without breaking signers), then verify both. Canonical format
       documented in code comments so future provider implementations
       follow the same shape.
-- [ ] Tests with table-driven vectors:
-  - [ ] Known-good signature → nil.
-  - [ ] Wrong secret → `ErrInvalidSignature`.
-  - [ ] Tampered body → `ErrInvalidSignature`.
-  - [ ] Malformed header (`md5=...`, `sha256=zzz`, empty) →
+- [x] Tests with table-driven vectors:
+  - [x] Known-good signature → nil.
+  - [x] Wrong secret → `ErrInvalidSignature`.
+  - [x] Tampered body → `ErrInvalidSignature`.
+  - [x] Malformed header (`md5=...`, `sha256=zzz`, empty) →
         `ErrMalformed`.
-  - [ ] Timestamp skew at boundary (`±skew`) and beyond.
-  - [ ] Missing timestamp header → `ErrTimestampMissing`.
-- [ ] Add `FuzzSignatureVerify` fuzz target seeded with valid and
+  - [x] Timestamp skew at boundary (`±skew`) and beyond.
+  - [x] Missing timestamp header → `ErrTimestampMissing`.
+- [x] Add `FuzzSignatureVerify` fuzz target seeded with valid and
       malformed header strings.
 
 **Handler — `internal/webhook/handler.go`:**
 
-- [ ] Implement `NewHandler(cfg HandlerConfig, metrics *observability.Metrics) http.Handler`
+- [x] Implement `NewHandler(cfg HandlerConfig, metrics *observability.Metrics) http.Handler`
       where `HandlerConfig` carries the signing secret, max body bytes,
       header names, and skew.
-- [ ] Handler flow per DESIGN-0001 §Webhook Handler Flow:
-  - [ ] `provider := r.PathValue("provider")`.
-  - [ ] `body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, cfg.MaxBodyBytes))`
+- [x] Handler flow per DESIGN-0001 §Webhook Handler Flow:
+  - [x] `provider := r.PathValue("provider")`.
+  - [x] `body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, cfg.MaxBodyBytes))`
         — on error, 413 if too large, else 400.
-  - [ ] Start `webhook.verify_signature` span.
-  - [ ] Call `signature.Verify(...)`; record
+  - [x] Start `webhook.verify_signature` span.
+  - [x] Call `signature.Verify(...)`; record
         `WebhookSigResults{provider, result}` (`valid|invalid|missing`).
-  - [ ] On invalid → 401, increment
+  - [x] On invalid → 401, increment
         `WebhookEvents{outcome="invalid_signature"}`, return.
-  - [ ] Start `webhook.parse` span; `json.Unmarshal` into
+  - [x] Start `webhook.parse` span; `json.Unmarshal` into
         `Envelope{EventType string, Data json.RawMessage}`.
-  - [ ] On malformed → 400, increment
+  - [x] On malformed → 400, increment
         `WebhookEvents{outcome="malformed"}`, return.
-  - [ ] Emit domain event log via `slog.InfoContext` with provider,
+  - [x] Emit domain event log via `slog.InfoContext` with provider,
         event_type, payload size, request_id, trace_id (auto).
-  - [ ] 202 Accepted; increment `WebhookEvents{outcome="accepted"}`,
+  - [x] 202 Accepted; increment `WebhookEvents{outcome="accepted"}`,
         observe `WebhookProcessing`.
-- [ ] Tests using `httptest.NewRecorder` and `testutil.ToFloat64`:
-  - [ ] Happy path: valid signature + body → 202, counters incremented.
-  - [ ] Invalid signature → 401, `signature_validation{result=invalid}`
+- [x] Tests using `httptest.NewRecorder` and `testutil.ToFloat64`:
+  - [x] Happy path: valid signature + body → 202, counters incremented.
+  - [x] Invalid signature → 401, `signature_validation{result=invalid}`
         and `events{outcome=invalid_signature}` both incremented.
-  - [ ] Body too large → 413, no envelope counter incremented.
-  - [ ] Malformed JSON → 400, `events{outcome=malformed}` incremented.
-  - [ ] Missing timestamp → 401, `signature_validation{result=missing}`
+  - [x] Body too large → 413, no envelope counter incremented.
+  - [x] Malformed JSON → 400, `events{outcome=malformed}` incremented.
+  - [x] Missing timestamp → 401, `signature_validation{result=missing}`
         incremented.
 
 #### Success Criteria
