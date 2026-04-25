@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-`webhookd` is a Go webhook receiver. Phase 0 (project bootstrap) is complete: `go.mod` is initialized, core dependencies are pinned (prometheus/client_golang, OTel SDK + OTLP/HTTP exporter + otelhttp), `cmd/webhookd/main.go` is a placeholder with version/commit ldflag-injectable vars, `Dockerfile` (distroless static nonroot) and `docker-bake.hcl` (local + CI multi-arch targets) are in place, `LICENSE` (Apache-2.0) is committed, and `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
+`webhookd` is a Go webhook receiver. Bootstrap (IMPL-0001 Phase 0) and the configuration package (IMPL-0001 Phase 1) are complete: `go.mod` is initialized, core dependencies are pinned, `Dockerfile` + `docker-bake.hcl` + `LICENSE` are in place, `internal/config` parses + validates every env var from DESIGN-0001 §Configuration plus the replay-protection and rate-limit additions resolved during impl-doc review (100% coverage, table-driven). `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
 
 The substantive specs:
 

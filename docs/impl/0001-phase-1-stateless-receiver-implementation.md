@@ -156,30 +156,35 @@ gives the canonical shape; this phase implements it.
 
 #### Tasks
 
-- [ ] Create `internal/config/config.go` with the `Config` struct holding
+- [x] Create `internal/config/config.go` with the `Config` struct holding
       all 18 env vars from DESIGN-0001 §Configuration plus a nested
       `BuildInfo{Version, Commit, GoVersion}`.
-- [ ] Implement small typed helpers: `envString`, `envDuration`,
-      `envInt64`, `envBool`. Each ~10 lines, no third-party deps.
-- [ ] Implement `Load() (*Config, error)`:
-  - [ ] Reads every variable, applies defaults.
-  - [ ] Returns an error for missing required values
-        (`WEBHOOK_SIGNING_SECRET`).
-  - [ ] Validates `WEBHOOK_TRACING_SAMPLE_RATIO` is in `[0.0, 1.0]`.
-  - [ ] Validates `WEBHOOK_LOG_LEVEL` parses to a `slog.Level`.
-  - [ ] Validates `WEBHOOK_LOG_FORMAT` is `json` or `text`.
-- [ ] Add the **Phase 1 replay-protection vars** that DESIGN-0001 does
+- [x] Implement small typed helpers: `envString`, `envDuration`,
+      `envInt64`, `envBool`. (Implemented as methods on an unexported
+      `loader` struct that records the first parse error so `Load`
+      doesn't have to thread an error through 21 fields.)
+- [x] Implement `Load() (*Config, error)`:
+  - [x] Reads every variable, applies defaults.
+  - [x] Returns an error for missing required values
+        (`WEBHOOK_SIGNING_SECRET` → exported `ErrSigningSecretRequired`).
+  - [x] Validates `WEBHOOK_TRACING_SAMPLE_RATIO` is in `[0.0, 1.0]`.
+  - [x] Validates `WEBHOOK_LOG_LEVEL` parses to a `slog.Level`
+        (debug/info/warn/warning/error, case-insensitive).
+  - [x] Validates `WEBHOOK_LOG_FORMAT` is `json` or `text`.
+- [x] Add the **Phase 1 replay-protection vars** that DESIGN-0001 does
       not yet enumerate:
-  - [ ] `WEBHOOK_SIGNATURE_HEADER` (default `X-Webhook-Signature`).
-  - [ ] `WEBHOOK_TIMESTAMP_HEADER` (default `X-Webhook-Timestamp`).
-  - [ ] `WEBHOOK_TIMESTAMP_SKEW` (default `5m`).
-- [ ] Add the Phase 1 rate-limit vars:
-  - [ ] `WEBHOOK_RATE_LIMIT_RPS` (default `100`).
-  - [ ] `WEBHOOK_RATE_LIMIT_BURST` (default `200`).
-- [ ] Write table-driven tests in `internal/config/config_test.go`
+  - [x] `WEBHOOK_SIGNATURE_HEADER` (default `X-Webhook-Signature`).
+  - [x] `WEBHOOK_TIMESTAMP_HEADER` (default `X-Webhook-Timestamp`).
+  - [x] `WEBHOOK_TIMESTAMP_SKEW` (default `5m`).
+- [x] Add the Phase 1 rate-limit vars:
+  - [x] `WEBHOOK_RATE_LIMIT_RPS` (default `100`).
+  - [x] `WEBHOOK_RATE_LIMIT_BURST` (default `200`).
+- [x] Write table-driven tests in `internal/config/config_test.go`
       covering: defaults, every override, type errors, missing-required,
       boundary conditions (`SAMPLE_RATIO=-0.1` and `1.1`).
-- [ ] Use `t.Setenv` (not `os.Setenv`) so tests parallelize cleanly.
+- [x] Use `t.Setenv` (not `os.Setenv`) so tests parallelize cleanly.
+      `TestMain` clears `WEBHOOK_*` and `OTEL_*` host env vars first so
+      each test runs from a deterministic baseline.
 
 #### Success Criteria
 
