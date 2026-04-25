@@ -111,26 +111,30 @@ later phases can run `make ci` to green. No business logic.
 
 #### Tasks
 
-- [ ] Run `go mod init github.com/donaldgifford/webhookd` (Go version per
+- [x] Run `go mod init github.com/donaldgifford/webhookd` (Go version per
       `mise.toml`: 1.26.1).
-- [ ] Pin core third-party dependencies in `go.mod`:
-  - [ ] `github.com/prometheus/client_golang`
-  - [ ] `go.opentelemetry.io/otel`
-  - [ ] `go.opentelemetry.io/otel/sdk`
-  - [ ] `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp`
-  - [ ] `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp`
-- [ ] Add a minimal `cmd/webhookd/main.go` placeholder that builds (just
+- [x] Pin core third-party dependencies in `go.mod`:
+  - [x] `github.com/prometheus/client_golang`
+  - [x] `go.opentelemetry.io/otel`
+  - [x] `go.opentelemetry.io/otel/sdk`
+  - [x] `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp`
+  - [x] `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp`
+- [x] Add a minimal `cmd/webhookd/main.go` placeholder that builds (just
       `package main; func main() {}` — real wiring lands in Phase 5) so
       `make build` succeeds.
-- [ ] Wire `-ldflags "-X main.version -X main.commit"` (already in the
+- [x] Wire `-ldflags "-X main.version -X main.commit"` (already in the
       Makefile). Add matching package-level `var version, commit string`
       in `cmd/webhookd/main.go`.
-- [ ] Write a `Dockerfile`: multi-stage, distroless static base; non-root
+- [x] Write a `Dockerfile`: multi-stage, distroless static base; non-root
       user; build with the same ldflags.
-- [ ] Write a `docker-bake.hcl` matching the targets the existing
+- [x] Write a `docker-bake.hcl` matching the targets the existing
       `.github/workflows/ci.yml` `docker-build` job invokes (`ci` target
       at minimum).
-- [ ] Verify `make ci` is green locally (lint + test + build +
+- [x] Add a top-level `LICENSE` file (Apache-2.0). Originally a Phase 6
+      task; moved forward because `make license-check` blocks `make ci`
+      without it. The per-file SPDX header and `goheader` linter config
+      remain in Phase 6.
+- [x] Verify `make ci` is green locally (lint + test + build +
       license-check). Tests will be empty at this point — that's expected.
 
 #### Success Criteria
@@ -517,7 +521,8 @@ These are additive and can land as their own commits / PRs.
 
 **License header consistency:**
 
-- [ ] Add a top-level `LICENSE` file with the standard Apache-2.0 text.
+- [x] Add a top-level `LICENSE` file with the standard Apache-2.0 text.
+      _(Done in Phase 0; was blocking `make license-check`.)_
 - [ ] Add `licenses-header.txt` with the SPDX-style two-line header:
 
       ```

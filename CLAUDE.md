@@ -4,20 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-`webhookd` is a Go webhook receiver. The repository is currently a **scaffold**: `cmd/webhookd/main.go` contains only a package declaration, there is no `go.mod` yet, and no `internal/` packages exist. The substantive specs for what to build live in `docs/`:
+`webhookd` is a Go webhook receiver. Phase 0 (project bootstrap) is complete: `go.mod` is initialized, core dependencies are pinned (prometheus/client_golang, OTel SDK + OTLP/HTTP exporter + otelhttp), `cmd/webhookd/main.go` is a placeholder with version/commit ldflag-injectable vars, `Dockerfile` (distroless static nonroot) and `docker-bake.hcl` (local + CI multi-arch targets) are in place, `LICENSE` (Apache-2.0) is committed, and `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
+
+The substantive specs:
 
 - `docs/design/0001-stateless-webhook-receiver-phase-1.md` — DESIGN-0001: Phase 1, the stateless HTTP receiver (routing, HMAC verification, OTel tracing, Prometheus metrics, slog with trace correlation, graceful shutdown, admin listener for metrics + probes). The substrate.
 - `docs/design/0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md` — DESIGN-0002: Phase 2, JSM webhook → `SAMLMapping` CR provisioning via controller-runtime SSA, with sync watch-and-respond.
+- `docs/impl/0001-phase-1-stateless-receiver-implementation.md` — IMPL-0001: phased task list for landing DESIGN-0001. Resolved Decisions section captures answers to design questions (header names, canonical signing format, request ID generator, etc.) — read before implementing each phase.
 - `docs/adr/0001` … `0006` — ADRs for the settled decisions: stdlib `net/http` routing, Prometheus+OTel signal split, env-only config, controller-runtime typed client, Server-Side Apply, synchronous response contract. Read these before arguing a different choice.
-- `walk1.md`, `walk2.md` (repo root) — line-by-line implementation walkthroughs that are prescriptive about package layout (`cmd/webhookd/main.go` for wiring only; `internal/{config,observability,httpx,webhook}` each with one reason to change) and the startup phases. **When implementing, follow these walkthroughs — they're the source of truth for structure.** Haven't been migrated into `docs/impl/` yet.
+- `archive/walk1.md` and `archive/walk2.md` (gitignored) — line-by-line implementation walkthroughs that are prescriptive about package layout (`cmd/webhookd/main.go` for wiring only; `internal/{config,observability,httpx,webhook}` each with one reason to change) and the startup phases. **When implementing, follow these walkthroughs — they're the source of truth for structure.**
 
-When starting implementation work, read the relevant design + walkthrough pair first. Don't invent architecture — the decisions are already made and captured in ADRs.
+When starting implementation work, read the relevant design + walkthrough pair plus IMPL-0001's phase tasks first. Don't invent architecture — the decisions are already made and captured in ADRs.
 
 ## Repo provenance
 
 Scaffolded from the `go-ext` blueprint in a `forge` registry (`.forge-lock.yaml`). Files listed there with `strategy: overwrite` are regenerated on `forge sync` and **should not be hand-edited** — change them upstream in the registry. That covers most dotfiles (`.golangci.yml`, `.goreleaser.yml`, `.github/workflows/*`, lint/format configs, `scripts/labels.sh`, etc.).
 
-One stale artifact to know about: `.goreleaser.yml` still references `forge` (binary name, `main: ./cmd/forge`, release owner/name). It needs rewriting to `webhookd` before the first release.
+Scaffold cleanup is complete: `.goreleaser.yml` was rewritten to `webhookd`, `make run` now points at `$(BIN_DIR)/$(PROJECT_NAME)`, `goimports.local-prefixes` was changed to `github.com/donaldgifford/webhookd`, and the four root-level `design0001.md` / `design0002.md` / `walk1.md` / `walk2.md` files were moved to `archive/` (gitignored) once the docz-canonical copies landed under `docs/`.
 
 ## Commands
 
@@ -34,8 +37,7 @@ Use `make` — it's the canonical entrypoint. `make help` lists targets.
 - `make license-check` — allowlist: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0
 - `make release-check` / `make release-local` — goreleaser validation / snapshot
 - `make run-local` — builds then runs `$(BIN_DIR)/webhookd`
-
-Note: `make run` currently points at `./build/bin/repo-guardian` (Makefile bug — another stale scaffold reference).
+- `docker buildx bake` — builds `webhookd:dev` for the local platform via `docker-bake.hcl`. CI uses `docker buildx bake ci` for the multi-arch (linux/amd64 + linux/arm64) target.
 
 ## Toolchain
 
@@ -45,8 +47,8 @@ Tool versions are pinned in `mise.toml`. Use `mise install` to materialize them.
 
 `.golangci.yml` is strict (Uber-style) and enables `revive`, `gocyclo` (complexity 15), `gocognit` (30), `funlen` (100 lines / 50 stmts), `nestif` (4), plus full `staticcheck`/`gosec`/`errcheck` including blank-identifier and type-assertion checks. Test files (`_test.go`) and `mock_*.go` files have relaxations — don't add nolint directives on test code for rules already waived there.
 
-One goimports footgun: the `local-prefixes` is `github.com/donaldgifford/keycloak-cli` (copy-paste from template). Imports in this repo will be grouped under `github.com/donaldgifford` via the `gci` `prefix(github.com/donaldgifford)` section, but if you care about import ordering precision, fix the `goimports.local-prefixes` to `github.com/donaldgifford/webhookd`.
+The `goheader` linter is enabled but not yet configured with a template; it's a no-op until Phase 6 wires `licenses-header.txt` and the `goheader.values` block. Don't add per-file SPDX headers to new Go files until then — they'd just have to move when the template lands.
 
 ## Documentation workflow
 
-`docz` is the documentation CLI. Config is `.docz.yaml`; docs live in `docs/{adr,rfc,design,impl,plan,investigation}`. When adding a new design/decision doc, prefer `docz create <type>` (via the `docz:create` skill) over hand-rolling — it auto-updates the README index table. Run `docz update` after editing frontmatter to refresh indexes. The root-level `walk1.md` / `walk2.md` files still need to migrate into `docs/impl/`; `design0001.md` / `design0002.md` are now outdated copies of the canonical `docs/design/` versions.
+`docz` is the documentation CLI. Config is `.docz.yaml`; docs live in `docs/{adr,rfc,design,impl,plan,investigation}`. When adding a new design/decision doc, prefer `docz create <type>` (via the `docz:create` skill) over hand-rolling — it auto-updates the README index table. Run `docz update` after editing frontmatter to refresh indexes.
