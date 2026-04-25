@@ -33,3 +33,6 @@ go.work.sum
 
 # Build directories
 build/
+
+# achived docs
+archive/
