@@ -11,7 +11,6 @@ created: 2026-04-24
 # 0005. Server-Side Apply for custom resource reconciliation
 
 <!--toc:start-->
-
 - [Status](#status)
 - [Context](#context)
 - [Decision](#decision)

@@ -11,7 +11,6 @@ created: 2026-04-24
 # 0006. Synchronous response contract for webhook providers
 
 <!--toc:start-->
-
 - [Status](#status)
 - [Context](#context)
 - [Decision](#decision)

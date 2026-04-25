@@ -11,7 +11,6 @@ created: 2026-04-24
 # 0001. Use stdlib net/http ServeMux for HTTP routing
 
 <!--toc:start-->
-
 - [Status](#status)
 - [Context](#context)
 - [Decision](#decision)

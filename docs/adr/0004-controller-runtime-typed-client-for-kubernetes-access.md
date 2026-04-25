@@ -11,7 +11,6 @@ created: 2026-04-24
 # 0004. controller-runtime typed client for Kubernetes access
 
 <!--toc:start-->
-
 - [Status](#status)
 - [Context](#context)
 - [Decision](#decision)

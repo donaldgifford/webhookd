@@ -11,7 +11,6 @@ created: 2026-04-24
 # 0002. Prometheus for metrics, OpenTelemetry for traces
 
 <!--toc:start-->
-
 - [Status](#status)
 - [Context](#context)
 - [Decision](#decision)
