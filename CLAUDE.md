@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-`webhookd` is a Go webhook receiver. Bootstrap (IMPL-0001 Phase 0) and the configuration package (IMPL-0001 Phase 1) are complete: `go.mod` is initialized, core dependencies are pinned, `Dockerfile` + `docker-bake.hcl` + `LICENSE` are in place, `internal/config` parses + validates every env var from DESIGN-0001 §Configuration plus the replay-protection and rate-limit additions resolved during impl-doc review (100% coverage, table-driven). `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
+`webhookd` is a Go webhook receiver. IMPL-0001 Phases 0–2 are complete: bootstrap (`go.mod`, `Dockerfile`, `docker-bake.hcl`, `LICENSE`), configuration (`internal/config`, table-driven, 100% coverage), and the observability substrate (`internal/observability/{logging,tracing,metrics}.go`) — slog with `trace_id`/`span_id` correlation via a wrapper handler that re-implements `WithAttrs`/`WithGroup` so derived loggers keep the wrapper, OTel `TracerProvider` with OTLP/HTTP exporter and a `samplerFor` helper that maps ratios to `ParentBased` samplers, and a private Prometheus registry exposing every instrument from DESIGN-0001 §Metrics plus go/process collectors and `webhookd_build_info`. `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
 
 The substantive specs:
 

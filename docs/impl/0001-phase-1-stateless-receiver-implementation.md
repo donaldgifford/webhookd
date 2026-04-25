@@ -207,56 +207,56 @@ reference.
 
 **Logging — `internal/observability/logging.go`:**
 
-- [ ] Implement `NewLogger(level slog.Level, format string) *slog.Logger`
+- [x] Implement `NewLogger(level slog.Level, format string) *slog.Logger`
       that returns either a JSON or text handler wrapped in a custom
       `traceHandler`.
-- [ ] Implement `traceHandler` that, in `Handle(ctx, record)`, looks up
+- [x] Implement `traceHandler` that, in `Handle(ctx, record)`, looks up
       the active span via `trace.SpanFromContext(ctx)` and adds
       `trace_id` and `span_id` attributes when the span context is
       valid.
-- [ ] Tests: emit a log inside an active span, assert the rendered JSON
+- [x] Tests: emit a log inside an active span, assert the rendered JSON
       carries both attrs; emit without a span, assert no attrs added
       and no error.
 
 **Tracing — `internal/observability/tracing.go`:**
 
-- [ ] Implement `NewTracerProvider(ctx, cfg) (*sdktrace.TracerProvider, error)`:
-  - [ ] If `cfg.TracingEnabled == false`, return a no-op-ish provider
+- [x] Implement `NewTracerProvider(ctx, cfg) (*sdktrace.TracerProvider, error)`:
+  - [x] If `cfg.TracingEnabled == false`, return a no-op-ish provider
         with `sdktrace.NewTracerProvider()` (no exporter).
-  - [ ] Otherwise, build OTLP/HTTP exporter via `otlptracehttp.New(ctx)`
+  - [x] Otherwise, build OTLP/HTTP exporter via `otlptracehttp.New(ctx)`
         — let it read `OTEL_EXPORTER_OTLP_*` env vars natively.
-  - [ ] Build resource via `resource.New(ctx, resource.WithFromEnv(),
+  - [x] Build resource via `resource.New(ctx, resource.WithFromEnv(),
         resource.WithAttributes(semconv.ServiceName, semconv.ServiceVersion))`.
-  - [ ] Wire batch span processor.
-  - [ ] Set sampler via `samplerFor(ratio)` helper:
+  - [x] Wire batch span processor.
+  - [x] Set sampler via `samplerFor(ratio)` helper:
         `>=1.0 → ParentBased(AlwaysSample())`,
         `<=0.0 → ParentBased(NeverSample())`,
         else `ParentBased(TraceIDRatioBased(ratio))`.
-- [ ] Tests for `samplerFor` boundary behavior (1.0, 0.0, 0.5, 1.5,
+- [x] Tests for `samplerFor` boundary behavior (1.0, 0.0, 0.5, 1.5,
       -0.1).
 
 **Metrics — `internal/observability/metrics.go`:**
 
-- [ ] Define `Metrics` struct holding all instruments listed in
+- [x] Define `Metrics` struct holding all instruments listed in
       DESIGN-0001 §Metrics:
-  - [ ] HTTP layer: `HTTPRequests`, `HTTPDuration`, `HTTPRequestSize`,
+  - [x] HTTP layer: `HTTPRequests`, `HTTPDuration`, `HTTPRequestSize`,
         `HTTPResponseSize`, `HTTPInflight`, `HTTPPanics`.
-  - [ ] Webhook domain: `WebhookEvents`, `WebhookSigResults`,
+  - [x] Webhook domain: `WebhookEvents`, `WebhookSigResults`,
         `WebhookProcessing`.
-  - [ ] Rate-limit field added in Phase 6 — backfill the struct then.
-- [ ] Implement `NewMetrics(build BuildInfo) (*prometheus.Registry, *Metrics)`
+  - [x] Rate-limit field added in Phase 6 — backfill the struct then.
+- [x] Implement `NewMetrics(build BuildInfo) (*prometheus.Registry, *Metrics)`
       that:
-  - [ ] Creates a fresh `prometheus.NewRegistry()` (not `DefaultRegisterer`).
-  - [ ] Registers all instruments with the canonical names + labels +
+  - [x] Creates a fresh `prometheus.NewRegistry()` (not `DefaultRegisterer`).
+  - [x] Registers all instruments with the canonical names + labels +
         bucket sets from DESIGN-0001 §Metrics.
-  - [ ] Registers `collectors.NewGoCollector()` and
+  - [x] Registers `collectors.NewGoCollector()` and
         `collectors.NewProcessCollector()`.
-  - [ ] Registers a `webhookd_build_info{version, commit, go_version} = 1`
+  - [x] Registers a `webhookd_build_info{version, commit, go_version} = 1`
         constant collector.
-- [ ] Implement `BuildInfo` constant collector (small wrapper around
+- [x] Implement `BuildInfo` constant collector (small wrapper around
       `prometheus.NewGaugeFunc` or `MustNewConstMetric` with
       const-labels populated from `BuildInfo`).
-- [ ] Tests: spin up `NewMetrics`, scrape via `promhttp.HandlerFor(reg, ...)`,
+- [x] Tests: spin up `NewMetrics`, scrape via `promhttp.HandlerFor(reg, ...)`,
       assert all metric names appear in the exposition output and
       `webhookd_build_info` is 1 with the expected label values.
 
