@@ -431,50 +431,50 @@ verbatim.
 
 #### Tasks
 
-- [ ] Replace the Phase 0 placeholder `main.go` with the full
+- [x] Replace the Phase 0 placeholder `main.go` with the full
       `main` + `run(ctx)` structure from Walk1.md §2.
-- [ ] Phase A wiring: `config.Load()`, fail-fast on error to stderr,
+- [x] Phase A wiring: `config.Load()`, fail-fast on error to stderr,
       exit 1.
-- [ ] Phase B wiring:
-  - [ ] `observability.NewLogger(...)`, `slog.SetDefault(...)`.
-  - [ ] `observability.NewTracerProvider(ctx, cfg)`,
+- [x] Phase B wiring:
+  - [x] `observability.NewLogger(...)`, `slog.SetDefault(...)`.
+  - [x] `observability.NewTracerProvider(ctx, cfg)`,
         `otel.SetTracerProvider`, `otel.SetTextMapPropagator(
         propagation.NewCompositeTextMapPropagator(TraceContext{}, Baggage{}))`.
-  - [ ] Defer `tp.Shutdown(...)` with a fresh timeout context bounded
+  - [x] Defer `tp.Shutdown(...)` with a fresh timeout context bounded
         by `cfg.ShutdownTimeout`.
-  - [ ] `observability.NewMetrics(buildInfo)`.
-- [ ] Phase C wiring:
-  - [ ] Public mux: `mux.Handle("POST /webhook/{provider}", webhook.NewHandler(...))`.
-  - [ ] Compose middleware chain via `httpx.Chain`.
-  - [ ] `readiness := &atomic.Bool{}`.
-  - [ ] Build admin mux via `httpx.NewAdminMux(reg, readiness)`.
-- [ ] Phase D wiring: `httpx.NewServer` for both addresses.
-- [ ] Phase E wiring:
-  - [ ] Goroutine per server, results into a buffered `errCh`.
-  - [ ] `readiness.Store(true)` after both servers are dispatched.
-  - [ ] Log "listening" with both addresses.
-  - [ ] `waitForShutdown` helper: select on `errCh` or
+  - [x] `observability.NewMetrics(buildInfo)`.
+- [x] Phase C wiring:
+  - [x] Public mux: `mux.Handle("POST /webhook/{provider}", webhook.NewHandler(...))`.
+  - [x] Compose middleware chain via `httpx.Chain`.
+  - [x] `readiness := &atomic.Bool{}`.
+  - [x] Build admin mux via `httpx.NewAdminMux(reg, readiness)`.
+- [x] Phase D wiring: `httpx.NewServer` for both addresses.
+- [x] Phase E wiring:
+  - [x] Goroutine per server, results into a buffered `errCh`.
+  - [x] `readiness.Store(true)` after both servers are dispatched.
+  - [x] Log "listening" with both addresses.
+  - [x] `waitForShutdown` helper: select on `errCh` or
         `signal.NotifyContext(SIGTERM, SIGINT)`.
-- [ ] `waitForShutdown` shutdown sequence per DESIGN-0001 §Graceful
+- [x] `waitForShutdown` shutdown sequence per DESIGN-0001 §Graceful
       Shutdown:
-  - [ ] `readiness.Store(false)`.
-  - [ ] `srv.Shutdown(ctx)` for both, with `cfg.ShutdownTimeout` budget.
-  - [ ] Tracer provider shutdown via the deferred call.
-  - [ ] Return error if anything exceeded budget so `main` exits 1.
-- [ ] Set the build-time injected `version` and `commit` package vars
+  - [x] `readiness.Store(false)`.
+  - [x] `srv.Shutdown(ctx)` for both, with `cfg.ShutdownTimeout` budget.
+  - [x] Tracer provider shutdown via the deferred call.
+  - [x] Return error if anything exceeded budget so `main` exits 1.
+- [x] Set the build-time injected `version` and `commit` package vars
       and propagate them into `BuildInfo` for the metrics collector.
-- [ ] Integration test in `cmd/webhookd/main_test.go` (or
+- [x] Integration test in `cmd/webhookd/main_test.go` (or
       `internal/integration_test.go`):
-  - [ ] `TestMain` wraps `goleak.VerifyTestMain(m)` from
+  - [x] `TestMain` wraps `goleak.VerifyTestMain(m)` from
         `go.uber.org/goleak` to catch goroutine leaks (BatchSpanProcessor,
         listeners, anything else).
-  - [ ] Bind both servers to `127.0.0.1:0`.
-  - [ ] Use `tracetest.NewInMemoryExporter` instead of OTLP/HTTP.
-  - [ ] POST a signed payload to the public listener.
-  - [ ] Scrape the admin listener; assert
+  - [x] Bind both servers to `127.0.0.1:0`.
+  - [x] Use `tracetest.NewInMemoryExporter` instead of OTLP/HTTP.
+  - [x] POST a signed payload to the public listener.
+  - [x] Scrape the admin listener; assert
         `webhookd_webhook_events_total{outcome="accepted"} == 1`.
-  - [ ] Assert the in-memory exporter received at least one span.
-  - [ ] Trigger graceful shutdown; assert clean exit.
+  - [x] Assert the in-memory exporter received at least one span.
+  - [x] Trigger graceful shutdown; assert clean exit.
 
 #### Success Criteria
 
