@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-`webhookd` is a Go webhook receiver. IMPL-0001 Phases 0–2 are complete: bootstrap (`go.mod`, `Dockerfile`, `docker-bake.hcl`, `LICENSE`), configuration (`internal/config`, table-driven, 100% coverage), and the observability substrate (`internal/observability/{logging,tracing,metrics}.go`) — slog with `trace_id`/`span_id` correlation via a wrapper handler that re-implements `WithAttrs`/`WithGroup` so derived loggers keep the wrapper, OTel `TracerProvider` with OTLP/HTTP exporter and a `samplerFor` helper that maps ratios to `ParentBased` samplers, and a private Prometheus registry exposing every instrument from DESIGN-0001 §Metrics plus go/process collectors and `webhookd_build_info`. `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
+`webhookd` is a Go webhook receiver. IMPL-0001 Phases 0–3 are complete: bootstrap, configuration (`internal/config`), the observability substrate (`internal/observability/{logging,tracing,metrics}.go`), and the HTTP framework (`internal/httpx/{middleware,admin,server}.go`). The httpx package ships `Chain`, `Recover`, `OTel`, `RequestID`, `SLog`, `Metrics` middleware with a `statusRecorder`-based response wrapper, a `NewAdminMux` exposing `/healthz`, `/readyz` (driven by an `atomic.Bool`), and `/metrics`, and a `NewServer` constructor that pulls every timeout from config and threads a base context through `BaseContext` so shutdown can cascade. `make ci` is green. Active work tracked in `docs/impl/0001-phase-1-stateless-receiver-implementation.md`.
 
 The substantive specs:
 

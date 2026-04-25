@@ -282,52 +282,52 @@ load-bearing; see Walk1.md §5.
 
 **Middleware — `internal/httpx/middleware.go`:**
 
-- [ ] Implement `Chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler`
+- [x] Implement `Chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler`
       that wraps in outermost-first order.
-- [ ] Implement `Recover(metrics *observability.Metrics)`:
-  - [ ] `defer recover()`; on panic, log at `error` with stack via
+- [x] Implement `Recover(metrics *observability.Metrics)`:
+  - [x] `defer recover()`; on panic, log at `error` with stack via
         `debug.Stack()`, increment `HTTPPanics`, write 500.
-- [ ] Implement `OTel(serviceName string)` — a thin wrapper around
+- [x] Implement `OTel(serviceName string)` — a thin wrapper around
       `otelhttp.NewHandler(next, "")` so `main.go` doesn't import
       `otelhttp` directly.
-- [ ] Implement `RequestID()`:
-  - [ ] Read `X-Request-ID` header; if empty, generate a UUIDv7 via
+- [x] Implement `RequestID()`:
+  - [x] Read `X-Request-ID` header; if empty, generate a UUIDv7 via
         `github.com/google/uuid` (`uuid.NewV7().String()`).
-  - [ ] Store in context via a typed key (`type ctxKey struct{}`).
-  - [ ] Echo back as `X-Request-ID` response header.
-- [ ] Implement `SLog()`:
-  - [ ] Wrap response writer to capture status code and bytes written
+  - [x] Store in context via a typed key (`type ctxKey struct{}`).
+  - [x] Echo back as `X-Request-ID` response header.
+- [x] Implement `SLog()`:
+  - [x] Wrap response writer to capture status code and bytes written
         (reuse a `statusRecorder` helper).
-  - [ ] On return, emit one log line at `info` with `method`, `route`,
+  - [x] On return, emit one log line at `info` with `method`, `route`,
         `status`, `bytes_in`, `bytes_out`, `duration_ms`, `request_id`,
         plus auto-injected `trace_id`/`span_id` via the traceHandler.
-- [ ] Implement `Metrics(metrics *observability.Metrics)`:
-  - [ ] `Inc/Dec` on `HTTPInflight`, observe `HTTPDuration`,
+- [x] Implement `Metrics(metrics *observability.Metrics)`:
+  - [x] `Inc/Dec` on `HTTPInflight`, observe `HTTPDuration`,
         `HTTPRequestSize`, `HTTPResponseSize`, increment `HTTPRequests`.
-  - [ ] Use `r.Pattern` (Go 1.22+) for the `route` label; substitute
+  - [x] Use `r.Pattern` (Go 1.22+) for the `route` label; substitute
         `"__unmatched__"` if empty (404 path).
-- [ ] Tests, each middleware in isolation:
-  - [ ] `Recover` catches panic → 500 + counter increment.
-  - [ ] `RequestID` populates context and echoes header.
-  - [ ] `SLog` emits exactly one line with expected attrs.
-  - [ ] `Metrics` records on 2xx, 4xx, 5xx; `HTTPInflight` returns to
+- [x] Tests, each middleware in isolation:
+  - [x] `Recover` catches panic → 500 + counter increment.
+  - [x] `RequestID` populates context and echoes header.
+  - [x] `SLog` emits exactly one line with expected attrs.
+  - [x] `Metrics` records on 2xx, 4xx, 5xx; `HTTPInflight` returns to
         zero after the handler.
 
 **Admin mux — `internal/httpx/admin.go`:**
 
-- [ ] Implement `NewAdminMux(reg *prometheus.Registry, ready *atomic.Bool) http.Handler`:
-  - [ ] `GET /healthz` → always 200.
-  - [ ] `GET /readyz` → 200 if `ready.Load()`, 503 otherwise.
-  - [ ] `GET /metrics` → `promhttp.HandlerFor(reg, ...)`.
-  - [ ] Wrap the mux in only `Recover` and `Metrics` middleware (no
+- [x] Implement `NewAdminMux(reg *prometheus.Registry, ready *atomic.Bool) http.Handler`:
+  - [x] `GET /healthz` → always 200.
+  - [x] `GET /readyz` → 200 if `ready.Load()`, 503 otherwise.
+  - [x] `GET /metrics` → `promhttp.HandlerFor(reg, ...)`.
+  - [x] Wrap the mux in only `Recover` and `Metrics` middleware (no
         otelhttp, no slog at info — would be too noisy for probes).
 
 **Server constructor — `internal/httpx/server.go`:**
 
-- [ ] Implement `NewServer(addr string, h http.Handler, cfg *config.Config) *http.Server`
+- [x] Implement `NewServer(addr string, h http.Handler, cfg *config.Config) *http.Server`
       with `ReadTimeout`, `ReadHeaderTimeout`, `WriteTimeout`,
       `IdleTimeout` from config.
-- [ ] Set `BaseContext` so request contexts inherit a parent the
+- [x] Set `BaseContext` so request contexts inherit a parent the
       shutdown sequence can cancel.
 
 #### Success Criteria
