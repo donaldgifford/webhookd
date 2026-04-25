@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 // Package httpx wires the HTTP layer for webhookd: middleware, the
 // admin mux (probes + metrics scrape), and the server constructor that
 // applies our timeout policy.

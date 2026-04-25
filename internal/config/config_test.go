@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 package config_test
 
 import (
@@ -67,6 +70,7 @@ func TestLoad_Defaults(t *testing.T) {
 		{"LogFormat", cfg.LogFormat, "json"},
 		{"TracingEnabled", cfg.TracingEnabled, true},
 		{"TracingSampleRatio", cfg.TracingSampleRatio, 1.0},
+		{"PProfEnabled", cfg.PProfEnabled, true},
 		{"ServiceName", cfg.ServiceName, "webhookd"},
 		{"ServiceVersion", cfg.ServiceVersion, ""},
 	}
@@ -101,6 +105,7 @@ func TestLoad_AllOverrides(t *testing.T) {
 		"WEBHOOK_LOG_FORMAT":           "text",
 		"WEBHOOK_TRACING_ENABLED":      "false",
 		"WEBHOOK_TRACING_SAMPLE_RATIO": "0.25",
+		"WEBHOOK_PPROF_ENABLED":        "false",
 		"OTEL_SERVICE_NAME":            "webhookd-test",
 		"OTEL_SERVICE_VERSION":         "v1.2.3",
 	}
@@ -134,6 +139,7 @@ func TestLoad_AllOverrides(t *testing.T) {
 		{"LogFormat", cfg.LogFormat, "text"},
 		{"TracingEnabled", cfg.TracingEnabled, false},
 		{"TracingSampleRatio", cfg.TracingSampleRatio, 0.25},
+		{"PProfEnabled", cfg.PProfEnabled, false},
 		{"ServiceName", cfg.ServiceName, "webhookd-test"},
 		{"ServiceVersion", cfg.ServiceVersion, "v1.2.3"},
 	}

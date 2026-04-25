@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 // Package config loads webhookd's runtime configuration from environment
 // variables.
 //
@@ -47,6 +50,12 @@ type Config struct {
 	// Tracing.
 	TracingEnabled     bool
 	TracingSampleRatio float64
+
+	// Profiling — kill switch for net/http/pprof on the admin listener.
+	// Default true; flip false in environments that forbid pprof
+	// endpoints. Pyroscope uses a pull model against /debug/pprof, so
+	// no client-side SDK needs configuration here.
+	PProfEnabled bool
 
 	// OTel resource attributes captured for our own resource assembly.
 	// The OTel SDK reads OTEL_EXPORTER_OTLP_* directly; only fields we
@@ -109,6 +118,9 @@ func Load() (*Config, error) {
 		// Tracing.
 		TracingEnabled:     l.boolean("WEBHOOK_TRACING_ENABLED", true),
 		TracingSampleRatio: l.f64("WEBHOOK_TRACING_SAMPLE_RATIO", 1.0),
+
+		// Profiling.
+		PProfEnabled: l.boolean("WEBHOOK_PPROF_ENABLED", true),
 
 		// OTel.
 		ServiceName:    l.str("OTEL_SERVICE_NAME", "webhookd"),

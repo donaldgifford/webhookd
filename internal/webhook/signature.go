@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 // Package webhook implements webhookd's webhook intake: signature and
 // timestamp verification, the per-provider HTTP handler, and the
 // generic envelope parse. The package is the trust boundary for

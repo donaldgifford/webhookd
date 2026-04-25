@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 // Package main is the entry point for the webhookd webhook receiver
 // service. It performs the five-phase startup sequence documented in
 // Walk1.md §2: config → observability → handlers → servers → run loop.
@@ -89,7 +92,8 @@ func run(ctx context.Context) error {
 	publicHandler := buildPublicHandler(cfg, logger, metrics)
 
 	var ready atomic.Bool
-	adminHandler := httpx.NewAdminMux(logger, reg, metrics, &ready)
+	adminHandler := httpx.NewAdminMux(logger, reg, metrics, &ready,
+		httpx.AdminConfig{PProfEnabled: cfg.PProfEnabled})
 
 	publicSrv := httpx.NewServer(ctx, cfg.Addr, publicHandler, cfg)
 	adminSrv := httpx.NewServer(ctx, cfg.AdminAddr, adminHandler, cfg)
@@ -163,6 +167,10 @@ func buildPublicHandler(
 		httpx.Recover(logger, metrics),
 		httpx.OTel(cfg.ServiceName),
 		httpx.RequestID(),
+		httpx.RateLimit(httpx.RateLimitConfig{
+			RPS:   cfg.RateLimitRPS,
+			Burst: cfg.RateLimitBurst,
+		}, metrics),
 		httpx.SLog(logger),
 		httpx.Metrics(metrics),
 	)

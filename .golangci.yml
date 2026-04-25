@@ -92,6 +92,14 @@ linters:
       asserts: true
       comparison: true
 
+    goheader:
+      values:
+        const:
+          YEAR: "2026"
+      template: |-
+        SPDX-License-Identifier: Apache-2.0
+        Copyright {{ YEAR }} webhookd contributors
+
     # Staticcheck includes SA (staticcheck), S (gosimple), and ST (stylecheck).
     # All three must be explicitly enabled via checks; only SA runs by default.
     staticcheck:

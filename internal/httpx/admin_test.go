@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 package httpx_test
 
 import (
@@ -89,6 +92,51 @@ func TestAdmin_MetricsExposes(t *testing.T) {
 	}
 }
 
+// TestAdmin_PProfGated covers the kill switch: when PProfEnabled is
+// false the endpoint is unreachable; when true it serves a non-empty
+// body. The flag-off path matters because some compliance regimes
+// forbid pprof on production processes.
+func TestAdmin_PProfGated(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		var ready atomic.Bool
+		ready.Store(true)
+		var buf bytes.Buffer
+		logger := newTestLogger(&buf)
+		reg, m := observability.NewMetrics(&config.Config{})
+		srv := httptest.NewServer(httpx.NewAdminMux(
+			logger, reg, m, &ready,
+			httpx.AdminConfig{PProfEnabled: false},
+		))
+		t.Cleanup(srv.Close)
+
+		_, status := getURL(t, srv.URL+"/debug/pprof/heap")
+		if status != http.StatusNotFound {
+			t.Errorf("disabled status = %d, want 404", status)
+		}
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		var ready atomic.Bool
+		ready.Store(true)
+		var buf bytes.Buffer
+		logger := newTestLogger(&buf)
+		reg, m := observability.NewMetrics(&config.Config{})
+		srv := httptest.NewServer(httpx.NewAdminMux(
+			logger, reg, m, &ready,
+			httpx.AdminConfig{PProfEnabled: true},
+		))
+		t.Cleanup(srv.Close)
+
+		body, status := getURL(t, srv.URL+"/debug/pprof/heap")
+		if status != http.StatusOK {
+			t.Errorf("enabled status = %d, want 200", status)
+		}
+		if body == "" {
+			t.Error("expected non-empty pprof body")
+		}
+	})
+}
+
 func newAdminServer(t *testing.T, ready bool) *httptest.Server {
 	t.Helper()
 	var b atomic.Bool
@@ -101,7 +149,9 @@ func newAdminServerWith(t *testing.T, ready *atomic.Bool) *httptest.Server {
 	var buf bytes.Buffer
 	logger := newTestLogger(&buf)
 	reg, m := observability.NewMetrics(&config.Config{})
-	return httptest.NewServer(httpx.NewAdminMux(logger, reg, m, ready))
+	return httptest.NewServer(httpx.NewAdminMux(
+		logger, reg, m, ready, httpx.AdminConfig{PProfEnabled: false},
+	))
 }
 
 func getURL(t *testing.T, url string) (string, int) {

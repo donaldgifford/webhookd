@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 package observability
 
 import (
@@ -28,6 +31,9 @@ type Metrics struct {
 	WebhookEvents     *prometheus.CounterVec
 	WebhookSigResults *prometheus.CounterVec
 	WebhookProcessing *prometheus.HistogramVec
+
+	// Rate-limit (recorded by httpx.RateLimit middleware in Phase 6).
+	HTTPRateLimited *prometheus.CounterVec
 }
 
 // httpDurationBuckets matches DESIGN-0001 §Metrics. The handler is a
@@ -121,6 +127,13 @@ func NewMetrics(cfg *config.Config) (*prometheus.Registry, *Metrics) {
 			},
 			[]string{"provider", "event_type"},
 		),
+		HTTPRateLimited: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "webhookd_http_rate_limited_total",
+				Help: "Requests rejected by the per-provider rate limiter.",
+			},
+			[]string{"provider"},
+		),
 	}
 
 	reg.MustRegister(
@@ -133,6 +146,7 @@ func NewMetrics(cfg *config.Config) (*prometheus.Registry, *Metrics) {
 		m.WebhookEvents,
 		m.WebhookSigResults,
 		m.WebhookProcessing,
+		m.HTTPRateLimited,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		newBuildInfoCollector(cfg.BuildInfo),

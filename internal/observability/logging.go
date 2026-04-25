@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 webhookd contributors
+
 // Package observability initializes webhookd's logging, tracing, and
 // metrics subsystems. The three signals are configured independently
 // (see ADR-0002) but share a single config struct and are wired

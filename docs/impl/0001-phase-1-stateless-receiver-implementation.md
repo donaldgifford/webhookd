@@ -1,7 +1,7 @@
 ---
 id: IMPL-0001
 title: "Phase 1 Stateless Receiver Implementation"
-status: Draft
+status: Complete
 author: Donald Gifford
 created: 2026-04-25
 ---
@@ -9,7 +9,7 @@ created: 2026-04-25
 
 # IMPL 0001: Phase 1 Stateless Receiver Implementation
 
-**Status:** Draft
+**Status:** Complete
 **Author:** Donald Gifford
 **Date:** 2026-04-25
 
@@ -498,11 +498,11 @@ These are additive and can land as their own commits / PRs.
 
 **pprof on admin listener (pull-based Pyroscope posture, no SDK import):**
 
-- [ ] In `internal/httpx/admin.go`, register `net/http/pprof` handlers
+- [x] In `internal/httpx/admin.go`, register `net/http/pprof` handlers
       under `/debug/pprof/` on the admin mux only.
-- [ ] Add `WEBHOOK_PPROF_ENABLED` env var (default `true`); skip
+- [x] Add `WEBHOOK_PPROF_ENABLED` env var (default `true`); skip
       registration when false (kill switch for paranoid environments).
-- [ ] Document in DESIGN-0001 References that Pyroscope scrapes
+- [x] Document in DESIGN-0001 References that Pyroscope scrapes
       `/debug/pprof/profile` from the admin port — same pull model as
       Prometheus on `/metrics`. No `github.com/grafana/pyroscope-go` SDK
       import. Per-provider profile labels via `runtime/pprof.Do` are a
@@ -510,34 +510,34 @@ These are additive and can land as their own commits / PRs.
 
 **Rate limiting middleware:**
 
-- [ ] Add `internal/httpx/ratelimit.go` with an in-process,
+- [x] Add `internal/httpx/ratelimit.go` with an in-process,
       per-provider, global (per replica) token-bucket middleware.
-- [ ] Use `golang.org/x/time/rate.Limiter`; one limiter per provider,
+- [x] Use `golang.org/x/time/rate.Limiter`; one limiter per provider,
       created lazily, keyed on the path-pattern value. Defaults from
       config: `100 rps` rate, `200` burst — generous day-one settings,
       tighten via observability after first week of real traffic.
-- [ ] On exceeded → 429 with `Retry-After` header, increment a new
+- [x] On exceeded → 429 with `Retry-After` header, increment a new
       `webhookd_http_rate_limited_total{provider}` counter. Backfill
       this field on the `Metrics` struct if not already added in Phase 2.
-- [ ] Insert in the chain after `RequestID` and before `SLog` so
+- [x] Insert in the chain after `RequestID` and before `SLog` so
       rate-limited requests get a request_id and a log line.
-- [ ] Tests: drive a bucket past its rate, assert 429 + counter
+- [x] Tests: drive a bucket past its rate, assert 429 + counter
       increment + `Retry-After` header presence.
 
 **License header consistency:**
 
 - [x] Add a top-level `LICENSE` file with the standard Apache-2.0 text.
       _(Done in Phase 0; was blocking `make license-check`.)_
-- [ ] Add `licenses-header.txt` with the SPDX-style two-line header:
+- [x] Add `licenses-header.txt` with the SPDX-style two-line header:
 
       ```
       // SPDX-License-Identifier: Apache-2.0
       // Copyright 2026 webhookd contributors
       ```
 
-- [ ] Configure `goheader` in `.golangci.yml` to point at the template
+- [x] Configure `goheader` in `.golangci.yml` to point at the template
       and the `year`/`copyright-holder` values.
-- [ ] Apply the header to all `*.go` files via `make fmt` or a
+- [x] Apply the header to all `*.go` files via `make fmt` or a
       `goheader -fix` pass.
 
 #### Success Criteria
