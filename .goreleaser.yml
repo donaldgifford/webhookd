@@ -2,9 +2,9 @@
 version: 2
 
 builds:
-  - id: forge
-    binary: forge
-    main: ./cmd/forge
+  - id: webhookd
+    binary: webhookd
+    main: ./cmd/webhookd
     goos:
       - linux
       - darwin
@@ -58,7 +58,7 @@ changelog:
 release:
   github:
     owner: donaldgifford
-    name: forge
+    name: webhookd
   draft: false
   prerelease: auto
   mode: prepend
@@ -71,13 +71,13 @@ release:
     ```bash
     # Download the appropriate binary for your system
     # Extract and move to your PATH
-    tar -xzf app*.tar.gz
-    mv forge ~/.local/bin/
+    tar -xzf webhookd*.tar.gz
+    mv webhookd ~/.local/bin/
     ```
 
   footer: |
     ---
-    **Full Changelog**: https://github.com/donaldgifford/forge/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/donaldgifford/webhookd/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 snapshot:
   version_template: "{{ .Tag }}-dev"
