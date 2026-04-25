@@ -5,15 +5,15 @@ status: Draft
 author: Donald Gifford
 created: 2026-04-21
 ---
+
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # DESIGN 0002: JSM Webhook → SAMLMapping Provisioning — Phase 2
 
-**Status:** Draft
-**Author:** Donald Gifford
-**Date:** 2026-04-21
+**Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-21
 
 <!--toc:start-->
+
 - [Overview](#overview)
 - [Goals and Non-Goals](#goals-and-non-goals)
   - [Goals](#goals)

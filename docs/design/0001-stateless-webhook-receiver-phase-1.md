@@ -5,15 +5,15 @@ status: Draft
 author: Donald Gifford
 created: 2026-04-21
 ---
+
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # DESIGN 0001: Stateless Webhook Receiver — Phase 1
 
-**Status:** Draft
-**Author:** Donald Gifford
-**Date:** 2026-04-21
+**Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-21
 
 <!--toc:start-->
+
 - [Overview](#overview)
 - [Goals and Non-Goals](#goals-and-non-goals)
   - [Goals](#goals)
@@ -472,8 +472,8 @@ state.
 
 ## References
 
-- Companion walkthrough: `walk1.md` (to be migrated to
-  `docs/impl/` or folded into this doc).
+- Companion walkthrough: `walk1.md` (to be migrated to `docs/impl/` or folded
+  into this doc).
 - ADR-0001 — Stdlib net/http ServeMux for HTTP routing.
 - ADR-0002 — Prometheus for metrics, OpenTelemetry for traces.
 - ADR-0003 — Environment-variable-only configuration.
