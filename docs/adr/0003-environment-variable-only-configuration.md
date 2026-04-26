@@ -11,7 +11,6 @@ created: 2026-04-24
 # 0003. Environment-variable-only configuration
 
 <!--toc:start-->
-
 - [Status](#status)
 - [Context](#context)
 - [Decision](#decision)
