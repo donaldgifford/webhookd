@@ -47,7 +47,37 @@ Tool versions are pinned in `mise.toml`. Use `mise install` to materialize them.
 
 `.golangci.yml` is strict (Uber-style) and enables `revive`, `gocyclo` (complexity 15), `gocognit` (30), `funlen` (100 lines / 50 stmts), `nestif` (4), plus full `staticcheck`/`gosec`/`errcheck` including blank-identifier and type-assertion checks. Test files (`_test.go`) and `mock_*.go` files have relaxations — don't add nolint directives on test code for rules already waived there.
 
-The `goheader` linter is enabled but not yet configured with a template; it's a no-op until Phase 6 wires `licenses-header.txt` and the `goheader.values` block. Don't add per-file SPDX headers to new Go files until then — they'd just have to move when the template lands.
+`goheader` is configured against `licenses-header.txt`. Every new Go file needs the SPDX two-line header — `make fmt` won't add it for you. Copy the header from any existing file.
+
+Recurring lint gotchas in this repo (all hit during IMPL-0001):
+
+- **`errcheck` with `check-blank: true`** flags `_, _ = w.Write(...)` — you can't just blank-discard. Either handle the error properly or factor into a helper that documents *why* discarding is safe.
+- **`gocritic hugeParam`** flags large value receivers. For interface-fixed signatures (`slog.Handler.Handle` takes `slog.Record` by value), use `//nolint:gocritic` with a reason. For our own constructors that take `*Config` by value at the boundary (e.g., `webhook.NewHandler(HandlerConfig, …)`), the same nolint applies — by-value is intentional so callers can build literals.
+- **`noctx`** rejects `httptest.NewRequest`, `http.Get`, `http.Post` in tests. Always use `httptest.NewRequestWithContext` and `http.NewRequestWithContext` + `http.DefaultClient.Do`.
+- **`contextcheck`** flags shutdown paths that intentionally use `context.WithTimeout(context.Background(), …)` because the parent ctx is signal-cancelled. The cleanest pattern: extract a named helper (`drainServers`, `shutdownTracerProvider`) and put `//nolint:contextcheck` at the call site with the reason.
+- **`revive context-as-argument`** — `context.Context` must be the **first** parameter. `httpx.NewServer(ctx, addr, h, cfg)` is correct; `(addr, h, cfg, ctx)` will fail lint.
+- **`nakedret`** triggers when named returns + a bare `return` span more than ~5 lines. Just write explicit returns.
+- **`gocritic emptyStringTest`** prefers `s == ""` over `len(s) == 0`.
+- **`gocritic httpNoBody`** prefers `http.NoBody` over `nil` for empty request bodies.
+- **`gocritic exitAfterDefer`** flags `os.Exit` after `defer cancel()`. Wrap the body in a `realMain() int` helper and `os.Exit(realMain())` so deferred cleanup runs.
+
+## Testing patterns that have bitten us
+
+- **Vec metrics with no children render zero lines** on a Prometheus scrape. Tests asserting "metric `foo` is in the exposition" must first trigger at least one observation on the labeled metric, otherwise the test fails despite registration being correct.
+- **`hex.DecodeString` is case-insensitive.** A signature test that compares received-header strings byte-for-byte is wrong. The fuzz target `internal/webhook.FuzzSignatureVerify` caught this — compare decoded byte slices, not raw hex strings.
+- **`r.PathValue("provider")` is empty in pre-mux middleware.** Go 1.22+ `ServeMux` only populates path values *after* routing. Middleware in the outer chain (e.g., `httpx.RateLimit`) must parse the URL path manually. We use `providerFromPath("/webhook/<provider>")` exactly for this.
+- **OTel `BatchSpanProcessor` leaks goroutines.** `goleak.VerifyTestMain` will fail unless either (a) `tp.Shutdown(ctx)` is awaited before the test exits, or (b) `goleak.IgnoreTopFunction("...batchSpanProcessor.processQueue")` is passed. The integration test in `cmd/webhookd/main_test.go` uses option (b).
+- **Shutdown contexts must be detached.** `context.WithTimeout(context.Background(), cfg.ShutdownTimeout)` — never derived from the run-loop ctx — so the drain budget survives a SIGTERM-cancelled parent.
+
+## Architectural patterns
+
+- **Narrow config structs at package boundaries.** Each `internal/` package takes the minimum it needs (`webhook.HandlerConfig`, `httpx.AdminConfig`, `httpx.RateLimitConfig`) — never the full `*config.Config`. Keeps coupling tight and tests easy to fake.
+- **Per-key lazy resources via `sync.Map`.** The rate limiter's per-provider `*rate.Limiter` is the canonical example: `Load` first, `LoadOrStore` on miss, no GC of entries (provider set is bounded by Phase 2's allow-list).
+- **Single private Prometheus registry.** `observability.NewMetrics` returns a fresh `*prometheus.Registry` every call — no `DefaultRegisterer` — so tests can spin up isolated harnesses without leaking state. The constructor takes `*config.Config` only because `BuildInfo` lives there.
+
+## Smoke testing the binary
+
+Until a docker-compose dev stack lands, the quickest smoke test is `docker buildx bake webhookd-local` followed by `docker run -p 8080:8080 -p 9090:9090 -e WEBHOOK_SIGNING_SECRET=topsecret -e WEBHOOK_TRACING_ENABLED=false webhookd:dev`, then curl the admin endpoints and post a signed payload (see the README quick-start for the exact `openssl dgst` command). Disabling tracing avoids a hanging exporter when no OTLP collector is reachable.
 
 ## Documentation workflow
 
