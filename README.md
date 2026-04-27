@@ -114,6 +114,18 @@ All configuration is via environment variables (see [ADR-0003](docs/adr/0003-env
 | `OTEL_SERVICE_NAME` | `webhookd` | Resource attribute. |
 | `OTEL_SERVICE_VERSION` | `""` | Resource attribute. |
 | `OTEL_EXPORTER_OTLP_*` | _(SDK defaults)_ | Read by the OTel SDK directly. |
+| `WEBHOOK_PROVIDERS` | `jsm` | Comma-separated list of enabled providers; gates required provider-specific config. |
+| `WEBHOOK_KUBECONFIG` | _empty_ | Optional kubeconfig path; empty falls back to in-cluster config. |
+| `WEBHOOK_JSM_TRIGGER_STATUS` | `Ready to Provision` | JSM ticket status that fires the action. |
+| `WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID` | _(required when JSM enabled)_ | JSM custom-field ID for the SSO group name. |
+| `WEBHOOK_JSM_FIELD_ROLE` | _(required when JSM enabled)_ | JSM custom-field ID for the role name. |
+| `WEBHOOK_JSM_FIELD_PROJECT` | _(required when JSM enabled)_ | JSM custom-field ID for the project name. |
+| `WEBHOOK_CR_NAMESPACE` | `wiz-operator` | Namespace where CRs are applied. |
+| `WEBHOOK_CR_API_GROUP` | `wiz.webhookd.io` | Operator CRD group; sanity-checked against imported types at startup. |
+| `WEBHOOK_CR_API_VERSION` | `v1alpha1` | Operator CRD version. |
+| `WEBHOOK_CR_FIELD_MANAGER` | `webhookd` | SSA `fieldManager` identity. |
+| `WEBHOOK_CR_SYNC_TIMEOUT` | `20s` | Max time to wait for the CR to reach `Ready=True`. Must be `<` `WEBHOOK_SHUTDOWN_TIMEOUT`. |
+| `WEBHOOK_CR_IDENTITY_PROVIDER_ID` | _(required when JSM enabled)_ | Static Wiz IdP identifier stamped onto every CR. |
 
 ## Observability
 

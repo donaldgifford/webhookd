@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -63,9 +64,82 @@ type Config struct {
 	ServiceName    string
 	ServiceVersion string
 
+	// EnabledProviders names the webhook providers wired into the
+	// dispatcher (Phase 2+). The value is a comma-separated list parsed
+	// from WEBHOOK_PROVIDERS; default is `jsm`. Required provider-
+	// specific config is validated only when that provider is in the
+	// list — see jsmRequired() / crRequired() below.
+	EnabledProviders []string
+
+	// JSM holds JSM-provider configuration. Values are required only
+	// when "jsm" appears in EnabledProviders.
+	JSM JSMConfig
+
+	// CR holds Kubernetes CustomResource configuration shared by every
+	// provider that applies CRs (currently just JSM). Values are
+	// required only when at least one CR-applying provider is enabled.
+	CR CRConfig
+
+	// Kubeconfig is an optional path to a kubeconfig file. Empty means
+	// the controller-runtime client falls back to in-cluster config.
+	Kubeconfig string
+
 	// BuildInfo carries build-time provenance. It is not populated from
 	// the environment — main injects it from -ldflags variables.
 	BuildInfo BuildInfo
+}
+
+// JSMConfig groups the env-driven settings for the JSM provider. Field
+// IDs are tenant-specific JSM custom-field identifiers (e.g.,
+// "customfield_10201") and so must come from configuration, not be
+// hard-coded.
+type JSMConfig struct {
+	// TriggerStatus is the JSM ticket status that fires the action.
+	// Anything else returns 200 with `status: "noop"` so JSM advances
+	// the ticket without retrying.
+	TriggerStatus string
+
+	// FieldProviderGroupID is the JSM custom-field ID carrying the SSO
+	// group name (becomes spec.providerGroupId on the CR).
+	FieldProviderGroupID string
+
+	// FieldRole is the JSM custom-field ID carrying the role name
+	// (becomes spec.roleRef.name).
+	FieldRole string
+
+	// FieldProject is the JSM custom-field ID carrying the project
+	// name (becomes spec.projectRefs[0].name; cardinality is 1:1 in
+	// Phase 2).
+	FieldProject string
+}
+
+// CRConfig groups Kubernetes CustomResource settings shared by any
+// CR-applying provider.
+type CRConfig struct {
+	// Namespace is where webhookd applies its CRs.
+	Namespace string
+
+	// APIGroup and APIVersion identify the operator's CRD. APIGroup
+	// is also compared at startup against wizapi.GroupVersion.Group;
+	// disagreement is fail-fast (see ADR-0004).
+	APIGroup   string
+	APIVersion string
+
+	// FieldManager is the SSA fieldManager identity for every Patch.
+	// Defaults to "webhookd"; lets ops distinguish webhookd-applied
+	// fields from operator-applied or human-applied ones in the K8s
+	// managedFields metadata.
+	FieldManager string
+
+	// SyncTimeout caps how long the executor waits for the operator
+	// to mark Ready=True. Must be strictly less than ShutdownTimeout
+	// so a SIGTERM during a long sync still drains within budget.
+	SyncTimeout time.Duration
+
+	// IdentityProviderID is the static Wiz IdP identifier stamped
+	// into every CR's spec.identityProviderId. One IdP per webhookd
+	// install.
+	IdentityProviderID string
 }
 
 // BuildInfo carries build-time provenance for the
@@ -83,6 +157,29 @@ type BuildInfo struct {
 // every request.
 var ErrSigningSecretRequired = errors.New(
 	"WEBHOOK_SIGNING_SECRET is required",
+)
+
+// ErrJSMFieldsRequired is returned by Load when "jsm" is in
+// EnabledProviders but one of WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID /
+// WEBHOOK_JSM_FIELD_ROLE / WEBHOOK_JSM_FIELD_PROJECT is unset.
+var ErrJSMFieldsRequired = errors.New(
+	"WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID, WEBHOOK_JSM_FIELD_ROLE, " +
+		"and WEBHOOK_JSM_FIELD_PROJECT are required when JSM is enabled",
+)
+
+// ErrIdentityProviderIDRequired is returned by Load when at least one
+// CR-applying provider is enabled but WEBHOOK_CR_IDENTITY_PROVIDER_ID
+// is unset.
+var ErrIdentityProviderIDRequired = errors.New(
+	"WEBHOOK_CR_IDENTITY_PROVIDER_ID is required when a CR-applying provider is enabled",
+)
+
+// ErrSyncTimeoutTooLong is returned when WEBHOOK_CR_SYNC_TIMEOUT is
+// not strictly less than WEBHOOK_SHUTDOWN_TIMEOUT — letting the sync
+// outlast the drain budget would either truncate replies to JSM or
+// exceed the JSM tenant's webhook timeout.
+var ErrSyncTimeoutTooLong = errors.New(
+	"WEBHOOK_CR_SYNC_TIMEOUT must be less than WEBHOOK_SHUTDOWN_TIMEOUT",
 )
 
 // Load reads configuration from the environment, applies defaults, and
@@ -125,6 +222,30 @@ func Load() (*Config, error) {
 		// OTel.
 		ServiceName:    l.str("OTEL_SERVICE_NAME", "webhookd"),
 		ServiceVersion: l.str("OTEL_SERVICE_VERSION", ""),
+
+		// Provider registry (Phase 2+).
+		EnabledProviders: l.csv("WEBHOOK_PROVIDERS", []string{"jsm"}),
+
+		// JSM provider.
+		JSM: JSMConfig{
+			TriggerStatus:        l.str("WEBHOOK_JSM_TRIGGER_STATUS", "Ready to Provision"),
+			FieldProviderGroupID: l.str("WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID", ""),
+			FieldRole:            l.str("WEBHOOK_JSM_FIELD_ROLE", ""),
+			FieldProject:         l.str("WEBHOOK_JSM_FIELD_PROJECT", ""),
+		},
+
+		// CR (Kubernetes) — applied by CR-emitting providers.
+		CR: CRConfig{
+			Namespace:          l.str("WEBHOOK_CR_NAMESPACE", "wiz-operator"),
+			APIGroup:           l.str("WEBHOOK_CR_API_GROUP", "wiz.webhookd.io"),
+			APIVersion:         l.str("WEBHOOK_CR_API_VERSION", "v1alpha1"),
+			FieldManager:       l.str("WEBHOOK_CR_FIELD_MANAGER", "webhookd"),
+			SyncTimeout:        l.dur("WEBHOOK_CR_SYNC_TIMEOUT", 20*time.Second),
+			IdentityProviderID: l.str("WEBHOOK_CR_IDENTITY_PROVIDER_ID", ""),
+		},
+
+		// Optional kubeconfig path; empty falls back to in-cluster config.
+		Kubeconfig: l.str("WEBHOOK_KUBECONFIG", ""),
 	}
 	if l.err != nil {
 		return nil, l.err
@@ -175,7 +296,36 @@ func validate(cfg *Config) error {
 			cfg.RateLimitBurst,
 		)
 	}
+	if cfg.CR.SyncTimeout <= 0 {
+		return fmt.Errorf(
+			"WEBHOOK_CR_SYNC_TIMEOUT must be positive: %s",
+			cfg.CR.SyncTimeout,
+		)
+	}
+	if cfg.CR.SyncTimeout >= cfg.ShutdownTimeout {
+		return fmt.Errorf("%w: sync=%s shutdown=%s",
+			ErrSyncTimeoutTooLong, cfg.CR.SyncTimeout, cfg.ShutdownTimeout)
+	}
+	if cfg.ProviderEnabled("jsm") {
+		if cfg.JSM.FieldProviderGroupID == "" ||
+			cfg.JSM.FieldRole == "" ||
+			cfg.JSM.FieldProject == "" {
+			return ErrJSMFieldsRequired
+		}
+		// JSM is currently the only CR-applying provider; tying the
+		// IdentityProviderID requirement to JSM until a second CR
+		// emitter shows up.
+		if cfg.CR.IdentityProviderID == "" {
+			return ErrIdentityProviderIDRequired
+		}
+	}
 	return nil
+}
+
+// ProviderEnabled reports whether name appears in EnabledProviders.
+// Comparison is case-sensitive — env values are normalized in csv().
+func (c *Config) ProviderEnabled(name string) bool {
+	return slices.Contains(c.EnabledProviders, name)
 }
 
 // loader is a small helper that records the first parse error it
@@ -242,6 +392,33 @@ func (l *loader) f64(name string, fallback float64) float64 {
 		return fallback
 	}
 	return f
+}
+
+// csv parses a comma-separated env var into a deduplicated, lower-cased,
+// whitespace-trimmed []string. Empty entries are dropped. Used for the
+// EnabledProviders allow-list.
+func (l *loader) csv(name string, fallback []string) []string {
+	if l.err != nil {
+		return fallback
+	}
+	v, ok := os.LookupEnv(name)
+	if !ok {
+		return fallback
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0, strings.Count(v, ",")+1)
+	for raw := range strings.SplitSeq(v, ",") {
+		entry := strings.ToLower(strings.TrimSpace(raw))
+		if entry == "" {
+			continue
+		}
+		if _, dup := seen[entry]; dup {
+			continue
+		}
+		seen[entry] = struct{}{}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func (l *loader) boolean(name string, fallback bool) bool {

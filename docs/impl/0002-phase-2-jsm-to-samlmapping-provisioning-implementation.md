@@ -191,55 +191,56 @@ parsing / validation.
 
 #### Tasks
 
-- [ ] Add a nested `JSMConfig` struct on `Config`:
-  - [ ] `TriggerStatus string` (`WEBHOOK_JSM_TRIGGER_STATUS`, default
+- [x] Add a nested `JSMConfig` struct on `Config`:
+  - [x] `TriggerStatus string` (`WEBHOOK_JSM_TRIGGER_STATUS`, default
         `Ready to Provision`).
-  - [ ] `FieldProviderGroupID string` (`WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID`,
+  - [x] `FieldProviderGroupID string` (`WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID`,
         **required when provider enabled**) — JSM custom-field ID for the
         SSO group name (becomes `spec.providerGroupId`).
-  - [ ] `FieldRole string` (`WEBHOOK_JSM_FIELD_ROLE`, **required when
+  - [x] `FieldRole string` (`WEBHOOK_JSM_FIELD_ROLE`, **required when
         provider enabled**) — JSM custom-field ID for the role name
         (becomes `spec.roleRef.name`, references a `UserRole` CR).
-  - [ ] `FieldProject string` (`WEBHOOK_JSM_FIELD_PROJECT`, **required
+  - [x] `FieldProject string` (`WEBHOOK_JSM_FIELD_PROJECT`, **required
         when provider enabled**) — JSM custom-field ID for the project
         name (becomes `spec.projectRefs[0].name`, references a `Project`
         CR).
-- [ ] Add a nested `CRConfig` struct on `Config`:
-  - [ ] `Namespace string` (`WEBHOOK_CR_NAMESPACE`, default `wiz-operator`).
-  - [ ] `APIGroup string` (`WEBHOOK_CR_API_GROUP`, default
+- [x] Add a nested `CRConfig` struct on `Config`:
+  - [x] `Namespace string` (`WEBHOOK_CR_NAMESPACE`, default `wiz-operator`).
+  - [x] `APIGroup string` (`WEBHOOK_CR_API_GROUP`, default
         `wiz.webhookd.io`). Used for log/metric labels and a startup
         sanity-check against `wizapi.GroupVersion.Group` (fail-fast if
         config and imported types disagree). The typed client uses the
         imported `wizapi.GroupVersion` for the actual GVK on the wire.
-  - [ ] `APIVersion string` (`WEBHOOK_CR_API_VERSION`, default `v1alpha1`).
-  - [ ] `FieldManager string` (`WEBHOOK_CR_FIELD_MANAGER`, default
+  - [x] `APIVersion string` (`WEBHOOK_CR_API_VERSION`, default `v1alpha1`).
+  - [x] `FieldManager string` (`WEBHOOK_CR_FIELD_MANAGER`, default
         `webhookd`).
-  - [ ] `SyncTimeout time.Duration` (`WEBHOOK_CR_SYNC_TIMEOUT`, default
+  - [x] `SyncTimeout time.Duration` (`WEBHOOK_CR_SYNC_TIMEOUT`, default
         `20s`). Validate `> 0` and `< ShutdownTimeout`. JSM tenant
         webhook timeout is 30s; 20s gives ~10s headroom for the 504
         round-trip.
-  - [ ] `IdentityProviderID string` (`WEBHOOK_CR_IDENTITY_PROVIDER_ID`,
+  - [x] `IdentityProviderID string` (`WEBHOOK_CR_IDENTITY_PROVIDER_ID`,
         **required when JSM provider enabled**) — static IdP identifier
         stamped into every CR's `spec.identityProviderId`. One IdP per
         webhookd install.
-- [ ] Add `Kubeconfig string` (`WEBHOOK_KUBECONFIG`, default empty —
+- [x] Add `Kubeconfig string` (`WEBHOOK_KUBECONFIG`, default empty —
       empty means in-cluster config).
-- [ ] Add a top-level `EnabledProviders []string` (`WEBHOOK_PROVIDERS`,
+- [x] Add a top-level `EnabledProviders []string` (`WEBHOOK_PROVIDERS`,
       default `["jsm"]`, comma-separated). Required JSM/CR fields are
       validated only when `"jsm"` is in the list. Self-describing config
       that future providers opt in the same way.
-- [ ] Update `internal/config/config_test.go` with table-driven cases:
-  - [ ] All defaults applied when no env vars set (and JSM disabled).
-  - [ ] All overrides parsed correctly (custom timeout, custom
+- [x] Update `internal/config/config_test.go` with table-driven cases:
+  - [x] All defaults applied when no env vars set (and JSM disabled
+        via `withBaselineEnv` helper).
+  - [x] All overrides parsed correctly (custom timeout, custom
         namespace, etc.).
-  - [ ] JSM enabled + missing `WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID` →
-        `ErrJSMFieldsRequired`.
-  - [ ] JSM enabled + missing `WEBHOOK_CR_IDENTITY_PROVIDER_ID` →
+  - [x] JSM enabled + missing `WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID` →
+        `ErrJSMFieldsRequired` (parametrized over each required field).
+  - [x] JSM enabled + missing `WEBHOOK_CR_IDENTITY_PROVIDER_ID` →
         `ErrIdentityProviderIDRequired`.
-  - [ ] `WEBHOOK_CR_SYNC_TIMEOUT >= WEBHOOK_SHUTDOWN_TIMEOUT` →
+  - [x] `WEBHOOK_CR_SYNC_TIMEOUT >= WEBHOOK_SHUTDOWN_TIMEOUT` →
         `ErrSyncTimeoutTooLong` (so we never let JSM time out before
         shutdown drains).
-- [ ] Update README §Configuration table with every new variable.
+- [x] Update README §Configuration table with every new variable.
 
 #### Success Criteria
 

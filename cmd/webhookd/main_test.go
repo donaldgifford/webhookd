@@ -41,6 +41,11 @@ func TestRun_HappyPath(t *testing.T) {
 	// keep the BatchSpanProcessor alive past Shutdown's deadline.
 	t.Setenv("WEBHOOK_TRACING_ENABLED", "false")
 	t.Setenv("WEBHOOK_SHUTDOWN_TIMEOUT", "5s")
+	// Disable JSM provider — Phase 1 integration tests don't exercise
+	// the JSM/CR pipeline, and JSM enabled would require config that
+	// isn't relevant here. Phase 6 adds a dedicated end-to-end test.
+	t.Setenv("WEBHOOK_PROVIDERS", "")
+	t.Setenv("WEBHOOK_CR_SYNC_TIMEOUT", "2s")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -87,6 +92,11 @@ func TestRun_AcceptsSignedWebhook(t *testing.T) {
 	t.Setenv("WEBHOOK_ADMIN_ADDR", "127.0.0.1:19091")
 	t.Setenv("WEBHOOK_TRACING_ENABLED", "false")
 	t.Setenv("WEBHOOK_SHUTDOWN_TIMEOUT", "5s")
+	// Disable JSM provider — Phase 1 integration tests don't exercise
+	// the JSM/CR pipeline, and JSM enabled would require config that
+	// isn't relevant here. Phase 6 adds a dedicated end-to-end test.
+	t.Setenv("WEBHOOK_PROVIDERS", "")
+	t.Setenv("WEBHOOK_CR_SYNC_TIMEOUT", "2s")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
