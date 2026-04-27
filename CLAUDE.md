@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-`webhookd` is a Go webhook receiver. **IMPL-0001 is complete** — all six phases shipped: bootstrap, configuration (`internal/config`), observability (`internal/observability`), HTTP framework (`internal/httpx` — middleware, admin mux with pprof gated by `WEBHOOK_PPROF_ENABLED`, server constructor, per-provider token-bucket rate limiting via `golang.org/x/time/rate`), webhook handler with HMAC-SHA256 + replay protection (`internal/webhook`), full application wiring (`cmd/webhookd/main.go`), and SPDX-style license headers across every Go file (`licenses-header.txt` + `goheader` lint). `make ci` is green. The next initiative is Phase 2 (DESIGN-0002: JSM webhook → SAMLMapping CR provisioning); a new IMPL doc for that scope should land before code begins.
+`webhookd` is a Go webhook receiver. **IMPL-0001 is complete and merged to `main`** (PR #7) — all six phases shipped: bootstrap, configuration (`internal/config`), observability (`internal/observability`), HTTP framework (`internal/httpx` — middleware, admin mux with pprof gated by `WEBHOOK_PPROF_ENABLED`, server constructor, per-provider token-bucket rate limiting via `golang.org/x/time/rate`), webhook handler with HMAC-SHA256 + replay protection (`internal/webhook`), full application wiring (`cmd/webhookd/main.go`), and SPDX-style license headers across every Go file (`licenses-header.txt` + `goheader` lint). The README is the canonical user-facing reference; this CLAUDE.md is for implementation context.
+
+**Active branch:** Phase 2 work is starting on `feat/design-0002-impl` (DESIGN-0002: JSM webhook → SAMLMapping CR provisioning). The first deliverable on this branch is **IMPL-0002** — a phased task list mirroring the IMPL-0001 structure. Don't write code until the IMPL doc lands; the IMPL doc is what makes the work reviewable phase by phase.
 
 The substantive specs:
 
@@ -12,7 +14,7 @@ The substantive specs:
 - `docs/design/0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md` — DESIGN-0002: Phase 2, JSM webhook → `SAMLMapping` CR provisioning via controller-runtime SSA, with sync watch-and-respond.
 - `docs/impl/0001-phase-1-stateless-receiver-implementation.md` — IMPL-0001: phased task list for landing DESIGN-0001. Resolved Decisions section captures answers to design questions (header names, canonical signing format, request ID generator, etc.) — read before implementing each phase.
 - `docs/adr/0001` … `0006` — ADRs for the settled decisions: stdlib `net/http` routing, Prometheus+OTel signal split, env-only config, controller-runtime typed client, Server-Side Apply, synchronous response contract. Read these before arguing a different choice.
-- `archive/walk1.md` and `archive/walk2.md` (gitignored) — line-by-line implementation walkthroughs that are prescriptive about package layout (`cmd/webhookd/main.go` for wiring only; `internal/{config,observability,httpx,webhook}` each with one reason to change) and the startup phases. **When implementing, follow these walkthroughs — they're the source of truth for structure.**
+- `archive/walk1.md` and `archive/walk2.md` (gitignored) — line-by-line implementation walkthroughs. `walk1.md` covered Phase 1 layout (now reflected in the merged code). `walk2.md` is the source of truth for Phase 2 structure — read it alongside DESIGN-0002 before writing IMPL-0002.
 
 When starting implementation work, read the relevant design + walkthrough pair plus IMPL-0001's phase tasks first. Don't invent architecture — the decisions are already made and captured in ADRs.
 

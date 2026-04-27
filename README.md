@@ -6,8 +6,8 @@ metrics. The Phase 1 receiver is stateless: it validates a delivery, logs the
 domain event, and returns `202 Accepted`. Phase 2 (DESIGN-0002) adds a
 provisioning path from JSM webhooks to Kubernetes `SAMLMapping` CRs.
 
-**Status:** Phase 1 (DESIGN-0001 / IMPL-0001) is complete and merged-ready.
-Phase 2 is designed but not yet implemented.
+**Status:** Phase 1 (DESIGN-0001 / IMPL-0001) shipped to `main` in [PR #7](https://github.com/donaldgifford/webhookd/pull/7).
+Phase 2 (DESIGN-0002) is designed but not yet implemented.
 
 ## Quick start
 
