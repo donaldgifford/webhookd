@@ -145,30 +145,30 @@ integration tests locally and in CI without further plumbing.
 
 #### Tasks
 
-- [ ] Add direct module imports to `go.mod`:
-  - [ ] `sigs.k8s.io/controller-runtime` (current stable; pin alongside the
-        Go 1.26.1 toolchain).
-  - [ ] `k8s.io/apimachinery`, `k8s.io/client-go` (transitive but worth
-        pinning for SSA / watch APIs).
-  - [ ] `sigs.k8s.io/controller-runtime/pkg/envtest` (test-only).
-- [ ] Run `go mod tidy`; verify the toolchain still resolves under
+- [x] Add direct module imports to `go.mod`:
+  - [x] `sigs.k8s.io/controller-runtime` (v0.23.3 pinned; transitive
+        from `k8s.io/apimachinery` v0.36.0).
+  - [x] `k8s.io/apimachinery` (direct), `k8s.io/client-go`
+        (transitive via controller-runtime).
+  - [x] `sigs.k8s.io/controller-runtime/pkg/envtest` (test-only;
+        ships inside controller-runtime).
+- [x] Run `go mod tidy`; verify the toolchain still resolves under
       `mise install`.
-- [ ] Add `make tools-envtest` target that fetches `setup-envtest` and
-      installs the matching Kubernetes binaries (`kube-apiserver`, `etcd`,
-      `kubectl`) into `bin/k8s/<version>/`. Wire `KUBEBUILDER_ASSETS` in
-      `make test` so envtest finds them.
-- [ ] Confirm `make ci` still passes with no business-logic changes (just
-      module additions + `make tools-envtest` available locally).
-- [ ] Land the local types stub at `internal/webhook/wizapi/types.go`:
+- [x] Add `make tools-envtest` target that fetches `setup-envtest` and
+      installs the matching Kubernetes binaries (`kube-apiserver`,
+      `etcd`, `kubectl`) into `build/envtest/k8s/<version>/`. Wire
+      `KUBEBUILDER_ASSETS` in `make test` so envtest finds them.
+- [x] Confirm `make ci` still passes with no business-logic changes
+      (just module additions + `make tools-envtest` available locally).
+- [x] Land the local types stub at `internal/webhook/wizapi/`:
       `GroupVersion = schema.GroupVersion{Group: "wiz.webhookd.io",
       Version: "v1alpha1"}`, plus `SAMLGroupMapping{Spec, Status}`,
       `Project{Spec, Status}`, `UserRole{Spec, Status}` types matching
       the YAML shapes in `docs/examples/samples/`, plus `AddToScheme`.
-      Hand-written DeepCopy methods (or generated via `controller-gen`
-      if convenient) so `client.Client` accepts them. Replaced by a
-      one-line re-export from
-      `github.com/donaldgifford/wiz-operator/api/v1alpha1` once that
-      module is published.
+      Hand-written DeepCopy methods in `zz_generated.deepcopy.go` so
+      `client.Client` accepts them. Replaced by a one-line re-export
+      from `github.com/donaldgifford/wiz-operator/api/v1alpha1` once
+      that module is published.
 
 #### Success Criteria
 
