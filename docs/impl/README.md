@@ -33,4 +33,5 @@ docz create impl "Your Implementation Title"
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
 | IMPL-0001 | Phase 1 Stateless Receiver Implementation | Complete | 2026-04-25 | Donald Gifford | [0001-phase-1-stateless-receiver-implementation.md](0001-phase-1-stateless-receiver-implementation.md) |
+| IMPL-0002 | Phase 2 JSM to SAMLGroupMapping Provisioning Implementation | Draft | 2026-04-27 | Donald Gifford | [0002-phase-2-jsm-to-samlmapping-provisioning-implementation.md](0002-phase-2-jsm-to-samlmapping-provisioning-implementation.md) |
 <!-- END DOCZ AUTO-GENERATED -->

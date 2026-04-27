@@ -1,0 +1,6 @@
+## Append samples of your project ##
+resources:
+- wiz_v1alpha1_project.yaml
+- wiz_v1alpha1_userrole.yaml
+- wiz_v1alpha1_samlgroupmapping.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

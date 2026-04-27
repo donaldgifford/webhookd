@@ -1,0 +1,20 @@
+apiVersion: wiz.webhookd.io/v1alpha1
+kind: Project
+metadata:
+  labels:
+    app.kubernetes.io/name: wiz-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: platform-team
+spec:
+  name: "Platform Team"
+  description: "Cloud resources owned by the platform engineering team"
+  businessUnit: "Engineering"
+  cloudAccountTagsLinks:
+    - tags:
+        - key: "team"
+          value: "platform"
+  riskProfile:
+    businessImpact: "HBI"
+  tags:
+    - key: "environment"
+      value: "production"
