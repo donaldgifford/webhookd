@@ -351,13 +351,20 @@ is pure parser).
         `wizapi.GroupVersion.Group` → typed mismatch error.
   - [x] Scheme recognizes `SAMLGroupMapping` / `Project` /
         `UserRole` plus core ConfigMap/Namespace.
-  - [x] Live-cluster smoke test deferred to Phase 4 envtest.
+  - [x] Live-cluster smoke test in `client_envtest_test.go`:
+        materializes a kubeconfig from envtest's `*rest.Config`,
+        calls `NewClients` with both `cfg.Kubeconfig=<path>` (explicit
+        kubeconfig branch) and `cfg.Kubeconfig=""` + `KUBECONFIG` env
+        (in-cluster fallback branch), then exercises both
+        `CtrlClient.Get` and `Clientset.CoreV1().Namespaces().Get`
+        against the live apiserver. Bumps `internal/k8s` coverage
+        from 52.9% to 88.2%.
 
 #### Success Criteria
 
 - `go test ./internal/k8s/...` passes with `-race`.
 - `internal/k8s.Scheme` recognizes both core types and SAMLGroupMapping.
-- `NewClient` is the only place the project chooses between
+- `NewClients` is the only place the project chooses between
   in-cluster and kubeconfig — no other package calls
   `ctrl.GetConfig()` directly.
 
