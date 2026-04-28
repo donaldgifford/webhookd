@@ -541,51 +541,64 @@ for automatic `appVersion` tracking.
 
 #### Tasks
 
-- [ ] `.github/workflows/chart-release.yml`:
-  - [ ] Trigger: `workflow_dispatch` only (manual release).
-  - [ ] Permissions: `contents: write` (for gh-pages branch),
-        `packages: write` (for OCI push).
-  - [ ] `release-oci` job:
-    - [ ] `helm registry login ghcr.io` with `${{ github.actor }}` +
+- [x] `.github/workflows/chart-release.yml`:
+  - [x] Trigger: `workflow_dispatch` with a required `chart-version`
+        input (must match `Chart.yaml` `version:`; the `release-oci`
+        job verifies first to fail fast on a typo).
+  - [x] `release-oci` job permissions: `packages: write` for OCI push.
+    - [x] `helm registry login ghcr.io` with `${{ github.actor }}` +
           `${{ secrets.GITHUB_TOKEN }}`.
-    - [ ] `helm package charts/webhookd -d /tmp/charts`.
-    - [ ] `helm push /tmp/charts/webhookd-*.tgz oci://ghcr.io/donaldgifford/charts`.
-  - [ ] `release-gh-pages` job:
-    - [ ] `needs: release-oci` so a failed OCI push blocks the
+    - [x] `helm package charts/webhookd -d /tmp/charts`.
+    - [x] `helm push /tmp/charts/webhookd-*.tgz oci://ghcr.io/donaldgifford/charts`.
+  - [x] `release-gh-pages` job permissions: `contents: write` for
+        gh-pages branch.
+    - [x] `needs: release-oci` so a failed OCI push blocks the
           gh-pages mirror.
-    - [ ] `helm/chart-releaser-action@v1` with `charts_dir: charts`,
+    - [x] `helm/chart-releaser-action@v1` with `charts_dir: charts`,
           `skip_existing: true`, `CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
           Resolved Decision §7 — let the action create the orphan
           `gh-pages` branch on first run; no pre-seed step.
-  - [ ] Release-notes step that extracts the latest entry from
-        `charts/webhookd/CHANGELOG.md` (everything between the top
-        `## X.Y.Z` heading and the next `## ` heading) and passes it
-        to `chart-releaser-action` via the `--release-notes-file` flag.
-        Resolved Decision §11 — per-chart hand-written CHANGELOG drives
-        release notes; no git-cliff coupling.
-- [ ] `.github/renovate.json`:
-  - [ ] Mirror repo-guardian's config: extends `config:base`, enables
-        `helm-values`, custom regex manager that watches goreleaser
-        tags on this repo and bumps `charts/webhookd/Chart.yaml`'s
+  - [x] Release-notes step extracts the latest entry from
+        `charts/webhookd/CHANGELOG.md` via
+        `awk '/^## /{n++} n==1{print} n==2{exit}'` and passes it
+        to chart-releaser-action via the `CR_RELEASE_NOTES_FILE`
+        env. Resolved Decision §11 — per-chart hand-written CHANGELOG
+        drives release notes; no git-cliff coupling.
+  - [x] `cr.yaml` at repo root tells chart-releaser to use the
+        external release-notes file.
+- [x] `.github/renovate.json`:
+  - [x] Extends `config:recommended` + `:dependencyDashboard` +
+        `:semanticCommits` + `schedule:earlyMondays`.
+  - [x] `helm-values` and `helmv3` managers wired against
+        `charts/.+/values\.yaml$` and `charts/.+/Chart\.yaml$`.
+  - [x] Custom regex manager watches `donaldgifford/webhookd`
+        github-releases and bumps `charts/webhookd/Chart.yaml`'s
         `appVersion` field.
-  - [ ] Group all helm-related updates into one PR.
-  - [ ] Optional: dependency dashboard issue.
-- [ ] OCI registry visibility flip moved to Phase 6 (one-time manual
+  - [x] Package rule groups helm-* mise.toml updates into one PR.
+  - [x] Package rule auto-merges patch bumps to the helm-* CI actions
+        (azure/setup-helm, helm/chart-releaser-action, etc.).
+- [x] OCI registry visibility flip stays in Phase 6 (one-time manual
       step after the very first push — Resolved Decision §8).
-- [ ] Sigstore / cosign signing of the `.tgz` is **deferred** to a
-      follow-up (Resolved Decision §9). README's install instructions
-      do not advertise `--verify` for v0.1.0.
+- [x] Sigstore / cosign signing of the `.tgz` is **deferred** to a
+      follow-up (Resolved Decision §9). `cr.yaml` sets `sign: false`
+      explicitly. README's install instructions do not advertise
+      `--verify` for v0.1.0.
 
 #### Success Criteria
 
 - `gh workflow run chart-release.yml` against the merged feat branch
   publishes `webhookd-0.1.0.tgz` to **both** OCI and gh-pages.
+  ⏳ — fires in Phase 6 against a real cluster.
 - `helm pull oci://ghcr.io/donaldgifford/charts/webhookd --version 0.1.0`
-  succeeds from a fresh machine without auth.
+  succeeds from a fresh machine without auth (after Phase 6's
+  one-time visibility flip). ⏳
 - `helm repo add webhookd https://donaldgifford.github.io/webhookd`
-  resolves; `helm search repo webhookd` returns chart 0.1.0.
+  resolves; `helm search repo webhookd` returns chart 0.1.0. ⏳
 - Renovate opens a PR within 24h of a hypothetical `v0.0.3` binary tag,
-  bumping `Chart.yaml`'s `appVersion`.
+  bumping `Chart.yaml`'s `appVersion`. ⏳ — once Renovate is enabled
+  on the repo.
+- `actionlint .github/workflows/chart-release.yml` clean. ✅
+- `jq . .github/renovate.json` parses cleanly. ✅
 
 ---
 

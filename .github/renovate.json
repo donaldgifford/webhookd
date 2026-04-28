@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "schedule:earlyMondays"
+  ],
+  "labels": ["dependencies"],
+  "branchPrefix": "renovate/",
+  "rangeStrategy": "pin",
+  "helm-values": {
+    "managerFilePatterns": ["/charts/.+/values\\.yaml$/"]
+  },
+  "helmv3": {
+    "managerFilePatterns": ["/charts/.+/Chart\\.yaml$/"]
+  },
+  "github-actions": {
+    "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"]
+  },
+  "packageRules": [
+    {
+      "description": "Group helm chart toolchain bumps in mise.toml together",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["mise.toml"],
+      "matchPackageNames": ["helm", "helm-cr", "helm-ct", "helm-diff", "helm-docs"],
+      "groupName": "helm chart toolchain"
+    },
+    {
+      "description": "Auto-merge patch bumps for the helm-* GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "azure/setup-helm",
+        "helm/chart-releaser-action",
+        "helm/chart-testing-action",
+        "helm/kind-action",
+        "helm-unittest/helm-unittest-action",
+        "losisin/helm-docs-github-action"
+      ],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the webhookd binary tag and bump charts/webhookd/Chart.yaml's appVersion to match",
+      "managerFilePatterns": ["/^charts/webhookd/Chart\\.yaml$/"],
+      "matchStrings": [
+        "appVersion:\\s*\"?(?<currentValue>[\\w.-]+)\"?"
+      ],
+      "depNameTemplate": "donaldgifford/webhookd",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.+)$"
+    }
+  ]
+}

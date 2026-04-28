@@ -1,0 +1,5 @@
+# chart-releaser config — see https://github.com/helm/chart-releaser
+generate-release-notes: false
+release-notes-file: webhookd.md
+package-path: .cr-release-packages
+sign: false
