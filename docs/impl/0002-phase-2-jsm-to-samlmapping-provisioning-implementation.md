@@ -503,93 +503,63 @@ hands in. Highly unit-testable.
 
 #### Tasks
 
-- [ ] Create `internal/webhook/jsm/payload.go`:
-  - [ ] `Payload` struct mirroring DESIGN-0002 §JSM Webhook Payload:
+- [x] Create `internal/webhook/jsm/payload.go`:
+  - [x] `Payload` struct mirroring DESIGN-0002 §JSM Webhook Payload:
         `Issue.Key`, `Issue.Fields.Status.Name`, plus a
-        `map[string]json.RawMessage` for custom fields keyed on the
-        configured field IDs.
-  - [ ] `Decode(body []byte) (*Payload, error)` returning typed errors
-        (`ErrInvalidJSON`, `ErrMissingIssue`, `ErrMissingStatus`).
-- [ ] Create `internal/webhook/jsm/extract.go`:
-  - [ ] `ExtractString(p *Payload, fieldID string) (string, error)` —
-        a single helper that pulls a custom field as a non-empty
-        string. Used three times to extract `providerGroupId`, `role`,
-        and `project`.
-  - [ ] Typed errors: `ErrFieldMissing` (custom field absent or null),
-        `ErrFieldEmpty` (present but empty / whitespace-only),
-        `ErrFieldType` (present but not a string).
-  - [ ] No form-vs-text strategy switch — the cardinality is 1:1
-        (one ticket carries one project + one role), so each field is
-        a plain string.
-- [ ] Create `internal/webhook/jsm/cr.go`:
-  - [ ] `BuildSpec(providerGroupID, role, project, identityProviderID,
-        description string) wizapi.SAMLGroupMappingSpec`. Tiny pure
-        constructor that always emits `ProjectRefs` as a single-
-        element list. Exists so Phase 8 sample-manifest test fixtures
-        can build the same spec deterministically.
-  - [ ] `BuildDescription(issueKey string) string` returning
-        `"Provisioned from JSM " + issueKey` (derived field, not
-        extracted from the ticket).
-- [ ] Create `internal/webhook/jsm/signature.go`:
-  - [ ] Wraps the existing `internal/webhook.Verify(...)` against the
-        JSM-specific HMAC header conventions. Phase 1's signing
-        contract is reusable — JSM is configured to send Slack-style
-        v0:`<ts>`:`<body>` HMAC because it's automation-rule-based.
-  - [ ] If JSM tenants in fact use a different HMAC scheme, this is
-        where the divergence lives — but until proven otherwise, keep
-        the v0: contract.
-  - [ ] Pulls `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_TIMESTAMP_HEADER`,
-        `WEBHOOK_TIMESTAMP_SKEW`, `WEBHOOK_SIGNING_SECRET` from the
-        injected provider config — *not* read directly from env, so
-        tests inject fakes.
-- [ ] Create `internal/webhook/jsm/provider.go`:
-  - [ ] `Provider` struct + `New(cfg jsm.Config) *Provider` constructor
-        taking a narrow `jsm.Config{TriggerStatus, FieldProviderGroupID,
-        FieldRole, FieldProject, IdentityProviderID, SigningSecret,
-        SigHeader, TSHeader, Skew, Now func() time.Time}`.
-  - [ ] `Name() string { return "jsm" }`.
-  - [ ] `VerifySignature(r *http.Request, body []byte) error` →
-        delegate to `signature.go`.
-  - [ ] `Handle(ctx, body)`:
-    - [ ] Decode payload (`jsm.decode_payload` span).
-    - [ ] If `payload.Status() != cfg.TriggerStatus` → return
-          `NoopAction{Reason: ...}`.
-    - [ ] Extract `providerGroupID`, `role`, `project` via
-          `ExtractString` (`jsm.extract_fields` span; attributes
-          `jsm.issue_key`, `jsm.provider_group_id`).
-    - [ ] Build spec via `cr.BuildSpec(providerGroupID, role, project,
-          cfg.IdentityProviderID, cr.BuildDescription(issueKey))`.
-    - [ ] Return
-          `ApplySAMLGroupMapping{IssueKey: issueKey, Spec: spec}`.
-- [ ] Create `internal/webhook/jsm/response.go`:
-  - [ ] `ResponseBody` struct matching DESIGN-0002 §HTTP Response
-        Contract.
-  - [ ] `Build(execResult webhook.ExecResult, traceID, requestID
-        string) ResponseBody`. The dispatcher calls this so the
-        response shape is JSM-specific even though execution is
-        provider-agnostic.
-- [ ] Tests in `internal/webhook/jsm/*_test.go`:
-  - [ ] `payload_test.go` — table-driven: valid, missing issue,
-        missing status, malformed JSON, extra unknown fields ignored.
-  - [ ] `extract_test.go` — table-driven `ExtractString` cases:
-        present + non-empty → value; absent → `ErrFieldMissing`;
-        empty/whitespace → `ErrFieldEmpty`; non-string type
-        (number/object/array) → `ErrFieldType`.
-  - [ ] `cr_test.go` — `BuildSpec` produces a single-element
-        `ProjectRefs` list with the expected `Name`; `BuildDescription`
-        returns the expected derived string.
-  - [ ] `signature_test.go` — wired to a known-good HMAC vector;
-        wrong-secret, replay outside skew, missing timestamp.
-  - [ ] `provider_test.go` — `Handle` returns `NoopAction` for
-        non-trigger status, `ApplySAMLGroupMapping` with the right spec for
-        trigger status, typed errors for parse failures.
-  - [ ] `FuzzJSMDecode` fuzz target seeded with the canonical JSM
-        sample plus malformed variants. Must run 60+ seconds clean
-        before merge.
-- [ ] Place an anonymized JSM sample payload at
-      `internal/webhook/jsm/testdata/sample.json` (real-shape, no
-      tenant data) for use by both unit tests and the Phase 6
-      integration test.
+        `map[string]json.RawMessage` for custom fields populated by a
+        custom UnmarshalJSON on `IssueFields`.
+  - [x] `Decode(body []byte) (*Payload, error)` returning typed errors
+        (`ErrInvalidJSON`, `ErrMissingIssue`, `ErrMissingIssueKey`,
+        `ErrMissingStatus`).
+- [x] Create `internal/webhook/jsm/extract.go`:
+  - [x] `ExtractString(p *Payload, fieldID string) (string, error)`.
+  - [x] Typed errors: `ErrFieldMissing`, `ErrFieldEmpty`, `ErrFieldType`.
+- [x] Create `internal/webhook/jsm/cr.go`:
+  - [x] `BuildSpec(providerGroupID, role, project, identityProviderID,
+        description string) wizapi.SAMLGroupMappingSpec`. Single-element
+        `ProjectRefs` always.
+  - [x] `BuildDescription(issueKey string) string`.
+- [x] Create `internal/webhook/jsm/signature.go`:
+  - [x] Wraps `internal/webhook.Verify(...)` against the configured
+        JSM headers (`SignatureConfig{SecretBytes, SigHeader, TSHeader,
+        Skew, Now}`). No JSM-native scheme assumed; v0:<ts>:<body>
+        contract reused as-is.
+- [x] Create `internal/webhook/jsm/provider.go`:
+  - [x] `Provider` struct + `New(cfg *Config) *Provider`. cfg taken
+        by pointer to dodge gocritic hugeParam (Signature drags in
+        secret + clock + headers).
+  - [x] Compile-time `var _ webhook.Provider = (*Provider)(nil)`.
+  - [x] `Name() string { return "jsm" }`.
+  - [x] `VerifySignature` delegates to package helper.
+  - [x] `Handle`: Decode → trigger-status check → extract three custom
+        fields → BuildSpec → ApplySAMLGroupMapping.
+  - [x] Extract failures classified: missing/empty → ErrBadRequest,
+        wrong type → ErrUnprocessable.
+  - [ ] Span instrumentation (`jsm.decode_payload`, `jsm.extract_fields`)
+        deferred to Phase 7.
+- [x] Create `internal/webhook/jsm/response.go`:
+  - [x] `ResponseBody` JSON shape: `status`, `reason`, `crName`,
+        `namespace`, `observedGeneration`, `traceId`, `requestId`.
+  - [x] `Build(res webhook.ExecResult, traceID, requestID) ResponseBody`
+        with status mapping (Noop→noop, Ready→success, else failure).
+- [x] Tests in `internal/webhook/jsm/*_test.go`:
+  - [x] `payload_test.go` — table-driven across all sentinels +
+        ignores-unknown-fields case.
+  - [x] `extract_test.go` — table-driven across present/missing/null/
+        empty/whitespace/non-string-type cases.
+  - [x] `cr_test.go` — `BuildSpec` single-element ProjectRefs assertion;
+        `BuildDescription` exact output.
+  - [x] `signature_test.go` — known-good HMAC vector; wrong-secret,
+        replay outside skew, missing timestamp, malformed prefix.
+  - [x] `provider_test.go` — Name, Noop on non-trigger status, Apply on
+        trigger status with full spec assertion, BadRequest classes,
+        Unprocessable on wrong type.
+  - [x] `response_test.go` — status-mapping table + identity field
+        passthrough + omitempty correctness.
+  - [x] `FuzzJSMDecode` seeded with canonical sample + malformed
+        variants. 15s clean (full 60s deferred to pre-merge gate).
+- [x] `internal/webhook/jsm/testdata/sample.json` — anonymized payload
+      for fuzz seeds and Phase 6 integration test.
 
 #### Success Criteria
 
