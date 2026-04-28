@@ -49,7 +49,7 @@ func (s *stubExecutor) Execute(_ context.Context, a webhook.Action) webhook.Exec
 
 func newDispatcher(t *testing.T, prov webhook.Provider, exec *stubExecutor) http.Handler {
 	t.Helper()
-	d := webhook.NewDispatcher(webhook.DispatcherConfig{
+	d := webhook.NewDispatcher(&webhook.DispatcherConfig{
 		Providers:       []webhook.Provider{prov},
 		ResponseBuilder: stubResponseBuilder{},
 		Executor:        exec,
@@ -212,7 +212,7 @@ func TestDispatcher_DuplicateProviderPanics(t *testing.T) {
 			t.Error("NewDispatcher with duplicate names did not panic")
 		}
 	}()
-	_ = webhook.NewDispatcher(webhook.DispatcherConfig{
+	_ = webhook.NewDispatcher(&webhook.DispatcherConfig{
 		Providers: []webhook.Provider{
 			&providertest.Mock{NameValue: "jsm"},
 			&providertest.Mock{NameValue: "jsm"},

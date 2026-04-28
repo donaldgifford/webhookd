@@ -34,6 +34,39 @@ type Metrics struct {
 
 	// Rate-limit (recorded by httpx.RateLimit middleware in Phase 6).
 	HTTPRateLimited *prometheus.CounterVec
+
+	// Phase 2: K8s and JSM-specific instruments. The `_k8s_` prefix
+	// (rather than `_cr_`) leaves room for future K8s ops outside the
+	// CR-apply path (e.g., reference validation).
+
+	// K8sApplyTotal counts every SSA Patch attempt by CR kind and
+	// outcome — outcome ∈ {created, updated, unchanged, error}. The
+	// "unchanged" outcome distinguishes a no-op SSA from a real apply,
+	// which matters for dashboarding ticket churn.
+	K8sApplyTotal *prometheus.CounterVec
+
+	// K8sSyncDuration histograms the watch-loop latency from Patch
+	// return to either Ready=True or timeout. Bucket boundaries
+	// chosen so the JSM SLO (10s p95) lands between 10s and 20s.
+	K8sSyncDuration *prometheus.HistogramVec
+
+	// JSMPayloadParseErrors counts payload-rejected events by reason
+	// (invalid_json | missing_field | wrong_type | empty_field).
+	// Operators alert on a non-zero rate of `wrong_type` because
+	// that's how a misconfigured JSM custom-field shows up.
+	JSMPayloadParseErrors *prometheus.CounterVec
+
+	// JSMNoopTotal counts NoopAction returns by the actual ticket
+	// status that fired the webhook. Useful for spotting misconfigured
+	// JSM automation rules ("why are we getting 500 noop's a day?").
+	JSMNoopTotal *prometheus.CounterVec
+
+	// JSMResponseTotal counts dispatcher responses by HTTP status
+	// code. Phase 1's HTTPRequests counter already covers this for
+	// HTTP transport telemetry; JSMResponseTotal lives at a
+	// different label cardinality (no method/route, just the
+	// JSM-relevant status) to keep dashboards focused.
+	JSMResponseTotal *prometheus.CounterVec
 }
 
 // httpDurationBuckets matches DESIGN-0001 §Metrics. The handler is a
@@ -49,6 +82,13 @@ var httpDurationBuckets = []float64{
 // MaxBodyBytes default.
 var httpSizeBuckets = []float64{
 	256, 1024, 4096, 16384, 65536, 262144, 1048576,
+}
+
+// k8sSyncBuckets brackets the operator's reconcile budget. The 10s
+// boundary aligns with the JSM SLO; below that is "fast", above is
+// "slow but pre-timeout"; >30 only ever shows on timeout outcomes.
+var k8sSyncBuckets = []float64{
+	0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30,
 }
 
 // NewMetrics builds the registry, registers every instrument plus the
@@ -135,6 +175,7 @@ func NewMetrics(cfg *config.Config) (*prometheus.Registry, *Metrics) {
 			[]string{"provider"},
 		),
 	}
+	addPhase2Metrics(m)
 
 	reg.MustRegister(
 		m.HTTPRequests,
@@ -147,11 +188,59 @@ func NewMetrics(cfg *config.Config) (*prometheus.Registry, *Metrics) {
 		m.WebhookSigResults,
 		m.WebhookProcessing,
 		m.HTTPRateLimited,
+		m.K8sApplyTotal,
+		m.K8sSyncDuration,
+		m.JSMPayloadParseErrors,
+		m.JSMNoopTotal,
+		m.JSMResponseTotal,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		newBuildInfoCollector(cfg.BuildInfo),
 	)
 	return reg, m
+}
+
+// addPhase2Metrics fills the K8s + JSM-specific instruments on m.
+// Pulled out of NewMetrics so that constructor stays under the funlen
+// budget; the split lines up with Phase 1 (HTTP + webhook) vs Phase 2
+// (K8s + JSM) responsibilities.
+func addPhase2Metrics(m *Metrics) {
+	m.K8sApplyTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "webhookd_k8s_apply_total",
+			Help: "Server-Side Apply attempts by CR kind and outcome.",
+		},
+		[]string{"kind", "outcome"},
+	)
+	m.K8sSyncDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "webhookd_k8s_sync_duration_seconds",
+			Help:    "Watch-loop latency from Patch return to Ready=True / timeout, by CR kind and outcome.",
+			Buckets: k8sSyncBuckets,
+		},
+		[]string{"kind", "outcome"},
+	)
+	m.JSMPayloadParseErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "webhookd_jsm_payload_parse_errors_total",
+			Help: "JSM payloads that failed to decode / extract, by reason.",
+		},
+		[]string{"reason"},
+	)
+	m.JSMNoopTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "webhookd_jsm_noop_total",
+			Help: "JSM webhooks that returned NoopAction, by ticket status.",
+		},
+		[]string{"trigger_status"},
+	)
+	m.JSMResponseTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "webhookd_jsm_response_total",
+			Help: "Dispatcher responses to JSM by HTTP status code.",
+		},
+		[]string{"status_code"},
+	)
 }
 
 // newBuildInfoCollector returns a constant gauge fixed at 1 with version,

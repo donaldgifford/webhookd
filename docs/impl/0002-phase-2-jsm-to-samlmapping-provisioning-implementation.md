@@ -667,59 +667,53 @@ propagation contract for the operator team.
 
 #### Tasks
 
-- [ ] In `internal/observability/metrics.go`, register on the same
-      private `prometheus.Registry` (note: `_k8s_` prefix instead of
-      `_cr_` for forward compatibility with future K8s ops like the
-      ref-validation lookups):
-  - [ ] `K8sApplyTotal *prometheus.CounterVec` →
-        `webhookd_k8s_apply_total{kind, outcome}` — outcome:
-        `created|updated|unchanged|error`.
-  - [ ] `K8sSyncDuration *prometheus.HistogramVec` →
-        `webhookd_k8s_sync_duration_seconds{kind, outcome}` —
-        outcome: `ready|timeout|transient`; buckets `0.1, 0.25, 0.5,
-        1, 2, 5, 10, 20, 30`.
-  - [ ] `JSMPayloadParseErrors *prometheus.CounterVec` →
-        `webhookd_jsm_payload_parse_errors_total{reason}` — reason:
-        `invalid_json|missing_field|wrong_type|empty_field`.
-  - [ ] `JSMNoopTotal *prometheus.CounterVec` →
-        `webhookd_jsm_noop_total{trigger_status}`.
-  - [ ] `JSMResponseTotal *prometheus.CounterVec` →
-        `webhookd_jsm_response_total{status_code}`.
-- [ ] Update `internal/observability/metrics_test.go` with scrape
-      assertions that all five new instruments appear in the
-      exposition (after a single observation per child to avoid the
-      Phase 1 "vec with no children" gotcha documented in
-      `CLAUDE.md`).
-- [ ] In the executor's `apply` and `waitForSync`, record on the
-      relevant counters/histograms with the right labels.
-- [ ] In the JSM provider, record on `JSMPayloadParseErrors` and
-      `JSMNoopTotal`.
-- [ ] In the dispatcher, record on `JSMResponseTotal` with the
-      written status code.
-- [ ] Verify span set against DESIGN-0002 §Observability Additions:
-  - [ ] `jsm.decode_payload`, `jsm.extract_fields` — created in the
-        JSM provider with attributes `jsm.issue_key`,
-        `jsm.provider_group_id` (no `jsm.field_format` — Phase 2
-        doesn't have a format strategy).
-  - [ ] `k8s.apply` — created in executor with attributes
-        `k8s.resource.kind`, `k8s.resource.name`,
-        `k8s.resource.namespace`, `k8s.generation`,
-        `webhookd.outcome`.
-  - [ ] `k8s.watch_cr` — created in executor with `k8s.sync.outcome`
-        set on close.
-  - [ ] `jsm.build_response` — created in the dispatcher
-        response-write path.
-- [ ] Update README §Observability with a paragraph on Phase 2 and
-      a table listing the new metrics.
-- [ ] Add **ADR-0007: Trace context propagation via CR annotation**
-      at `docs/adr/0007-trace-context-propagation-via-cr-annotation.md`
-      documenting the contract: webhookd writes the W3C trace-id
-      (32-hex-char) to the `webhookd.io/trace-id` annotation on every
-      applied CR; the operator's reconciler reads that annotation,
-      builds a remote-parent `SpanContext`, and links its reconcile
-      span as a child. This gives Tempo a single trace spanning the
-      JSM → webhookd → operator → Wiz path. ADR cites
-      DESIGN-0002 §Observability for rationale.
+- [x] In `internal/observability/metrics.go`, register on the same
+      private `prometheus.Registry`. The `_k8s_` prefix leaves room
+      for future K8s ops outside the CR-apply path:
+  - [x] `K8sApplyTotal` (`webhookd_k8s_apply_total{kind,outcome}`).
+        `applyOutcome` derives the outcome label from CR generation.
+  - [x] `K8sSyncDuration` (`webhookd_k8s_sync_duration_seconds`,
+        buckets `0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30`).
+        `syncOutcome` maps `ResultKind` → `ready|timeout|transient`.
+  - [x] `JSMPayloadParseErrors` (`webhookd_jsm_payload_parse_errors_total{reason}`).
+  - [x] `JSMNoopTotal` (`webhookd_jsm_noop_total{trigger_status}`).
+  - [x] `JSMResponseTotal` (`webhookd_jsm_response_total{status_code}`).
+- [x] Updated `metrics_test.go` to touch every new vec and assert it
+      shows up in scrape output.
+- [x] Executor records `K8sApplyTotal` (apply path) and
+      `K8sSyncDuration` (waitForSync path); both nil-safe so executor
+      tests can pass nil metrics.
+- [x] JSM provider records `JSMPayloadParseErrors` (decode + extract
+      reasons mapped via `decodeReason` / `extractReason` helpers)
+      and `JSMNoopTotal` (per ticket status).
+- [x] Dispatcher records `JSMResponseTotal` keyed by HTTP status
+      code in `writeResponse`.
+- [x] Spans:
+  - [x] `k8s.apply` in executor with attributes `k8s.resource.kind`,
+        `k8s.resource.namespace`, `k8s.resource.name`,
+        `k8s.generation`, `jsm.issue_key`, `webhookd.outcome`.
+        Records errors via `span.RecordError` + `codes.Error`.
+  - [x] `k8s.watch_cr` in executor with `k8s.sync.outcome` set on
+        the deferred close path.
+  - [ ] `jsm.decode_payload`, `jsm.extract_fields`,
+        `jsm.build_response` — deferred. These wrap pure functions
+        that take microseconds and rarely error; they'd be Tempo
+        noise without dashboards keyed on them. Can land later if a
+        provider-side trace pivot becomes valuable.
+- [x] **ADR-0007: Trace context propagation via CR annotation** at
+      `docs/adr/0007-trace-context-propagation-via-cr-annotation.md`.
+      Documents the writer-side contract: webhookd writes the W3C
+      32-hex-char trace-id to `webhookd.io/trace-id` on every applied
+      CR. The operator (`github.com/donaldgifford/wiz-operator`) reads
+      it and links its reconcile span. Annotation is observability
+      metadata only — operator MUST NOT depend on it for correctness.
+      Rejected `traceparent` (Phase 2 has no causal ordering between
+      webhookd's exit span and the operator's reconcile entry — link
+      semantics are honest), `.status.observability.traceId` (status
+      is operator's namespace), and a sidecar lookup API (overkill).
+- [ ] README §Observability paragraph + Phase 2 metric table —
+      deferred to Phase 8 when DESIGN-0002 status flips to
+      Implemented and the README is rewritten end-to-end.
 
 #### Success Criteria
 

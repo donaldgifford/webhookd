@@ -10,14 +10,27 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/donaldgifford/webhookd/internal/httpx"
+	"github.com/donaldgifford/webhookd/internal/observability"
 	"github.com/donaldgifford/webhookd/internal/webhook/wizapi"
 )
+
+// tracerName is the instrumentation-scope name for spans the executor
+// emits. Stable; dashboards filter on this.
+const tracerName = "github.com/donaldgifford/webhookd/internal/webhook"
+
+// crKindLabel is the constant Prometheus label value for the K8s
+// metrics. Phase 2 ships exactly one CR kind; once we have more,
+// callers will pass it as a parameter.
+const crKindLabel = "SAMLGroupMapping"
 
 // Annotation and label keys stamped onto every CR webhookd applies.
 // `webhookd.io/` is the project-namespaced prefix for everything
@@ -62,6 +75,7 @@ type ExecutorConfig struct {
 type Executor struct {
 	ctrlClient client.WithWatch
 	logger     *slog.Logger
+	metrics    *observability.Metrics
 	cfg        ExecutorConfig
 }
 
@@ -69,9 +83,14 @@ type Executor struct {
 // The caller is responsible for ensuring `Scheme` (from internal/k8s)
 // is the scheme behind ctrlClient — typed Patch on SAMLGroupMapping
 // won't work otherwise.
+//
+// metrics may be nil; tests use the nil shorthand to skip metric
+// observations entirely. Production wires it through from
+// `observability.NewMetrics`.
 func NewExecutor(
 	ctrlClient client.WithWatch,
 	logger *slog.Logger,
+	metrics *observability.Metrics,
 	cfg ExecutorConfig,
 ) *Executor {
 	if cfg.Now == nil {
@@ -83,6 +102,7 @@ func NewExecutor(
 	return &Executor{
 		ctrlClient: ctrlClient,
 		logger:     logger,
+		metrics:    metrics,
 		cfg:        cfg,
 	}
 }
@@ -96,8 +116,10 @@ func (e *Executor) Execute(ctx context.Context, a Action) ExecResult {
 	case ApplySAMLGroupMapping:
 		applied, err := e.apply(ctx, &act)
 		if err != nil {
+			e.observeApply("error")
 			return classifyK8sErr(err, e.cfg.Namespace, crName(act.IssueKey))
 		}
+		e.observeApply(applyOutcome(applied))
 		return e.waitForSync(ctx, applied)
 	default:
 		return ExecResult{Kind: ResultInternalError, Reason: fmt.Sprintf("unknown action %T", a)}
@@ -110,6 +132,16 @@ func (e *Executor) Execute(ctx context.Context, a Action) ExecResult {
 // semantics. act is taken by pointer to avoid copying the embedded
 // SAMLGroupMappingSpec on every call.
 func (e *Executor) apply(ctx context.Context, act *ApplySAMLGroupMapping) (*wizapi.SAMLGroupMapping, error) {
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "k8s.apply",
+		trace.WithAttributes(
+			attribute.String("k8s.resource.kind", crKindLabel),
+			attribute.String("k8s.resource.namespace", e.cfg.Namespace),
+			attribute.String("k8s.resource.name", crName(act.IssueKey)),
+			attribute.String("jsm.issue_key", act.IssueKey),
+		),
+	)
+	defer span.End()
+
 	obj := &wizapi.SAMLGroupMapping{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: wizapi.GroupVersion.String(),
@@ -136,6 +168,9 @@ func (e *Executor) apply(ctx context.Context, act *ApplySAMLGroupMapping) (*wiza
 		client.FieldOwner(e.cfg.FieldManager),
 		client.ForceOwnership,
 	); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "ssa patch")
+		span.SetAttributes(attribute.String("webhookd.outcome", "error"))
 		return nil, fmt.Errorf("ssa patch: %w", err)
 	}
 
@@ -144,8 +179,15 @@ func (e *Executor) apply(ctx context.Context, act *ApplySAMLGroupMapping) (*wiza
 		Namespace: e.cfg.Namespace,
 		Name:      obj.Name,
 	}, got); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "post-apply get")
+		span.SetAttributes(attribute.String("webhookd.outcome", "error"))
 		return nil, fmt.Errorf("post-apply get: %w", err)
 	}
+	span.SetAttributes(
+		attribute.Int64("k8s.generation", got.Generation),
+		attribute.String("webhookd.outcome", applyOutcome(got)),
+	)
 	return got, nil
 }
 
@@ -170,7 +212,22 @@ func (e *Executor) waitForSync(parent context.Context, applied *wizapi.SAMLGroup
 	ctx, cancel := context.WithTimeout(parent, e.cfg.SyncTimeout)
 	defer cancel()
 
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "k8s.watch_cr",
+		trace.WithAttributes(
+			attribute.String("k8s.resource.kind", crKindLabel),
+			attribute.String("k8s.resource.namespace", applied.Namespace),
+			attribute.String("k8s.resource.name", applied.Name),
+			attribute.Int64("k8s.generation", applied.Generation),
+		),
+	)
+	start := time.Now()
 	base := ExecResult{CRName: applied.Name, Namespace: applied.Namespace}
+	defer func() {
+		outcome := syncOutcome(base.Kind)
+		span.SetAttributes(attribute.String("k8s.sync.outcome", outcome))
+		span.End()
+		e.observeSync(outcome, time.Since(start))
+	}()
 
 	// Initial Get covers the case where Ready=True was set between our
 	// SSA Patch and the Watch establishing. Errors here aren't fatal —
@@ -300,6 +357,57 @@ func crName(issueKey string) string {
 		}
 	}
 	return b.String()
+}
+
+// syncOutcome maps a watch-step ResultKind onto the histogram label
+// (`ready` | `timeout` | `transient`).
+func syncOutcome(kind ResultKind) string {
+	switch kind {
+	case ResultReady:
+		return "ready"
+	case ResultTimeout:
+		return "timeout"
+	default:
+		return "transient"
+	}
+}
+
+// observeApply increments the apply counter on the configured
+// outcome label. nil-safe so tests can pass nil metrics.
+func (e *Executor) observeApply(outcome string) {
+	if e.metrics == nil {
+		return
+	}
+	e.metrics.K8sApplyTotal.WithLabelValues(crKindLabel, outcome).Inc()
+}
+
+// observeSync histograms the watch-loop duration on the configured
+// outcome label.
+func (e *Executor) observeSync(outcome string, d time.Duration) {
+	if e.metrics == nil {
+		return
+	}
+	e.metrics.K8sSyncDuration.WithLabelValues(crKindLabel, outcome).Observe(d.Seconds())
+}
+
+// applyOutcome derives the apply-step Prometheus label from the CR's
+// generation: a fresh CR is created (gen=1), an existing CR with bumped
+// generation is updated (gen>1 and Generation==ObservedGeneration+1
+// is too racy to detect with confidence; for now everything past 1 is
+// "updated" until we have richer signals). SSA noops are tagged
+// "unchanged" only when generation didn't move.
+func applyOutcome(obj *wizapi.SAMLGroupMapping) string {
+	switch {
+	case obj.Generation == 0:
+		// Shouldn't happen post-Get, but defensively distinct.
+		return "error"
+	case obj.Generation == 1:
+		return "created"
+	case obj.Status.ObservedGeneration == obj.Generation:
+		return "unchanged"
+	default:
+		return "updated"
+	}
 }
 
 // classifyK8sErr maps an apply-step error to the right ResultKind.

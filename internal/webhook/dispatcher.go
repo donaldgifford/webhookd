@@ -11,8 +11,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/donaldgifford/webhookd/internal/httpx"
+	"github.com/donaldgifford/webhookd/internal/observability"
 )
 
 // ResponseBuilder is the seam between provider-agnostic execution
@@ -38,6 +40,7 @@ type Dispatcher struct {
 	responseBuilder ResponseBuilder
 	executor        executorIface
 	logger          *slog.Logger
+	metrics         *observability.Metrics
 	maxBodyBytes    int64
 }
 
@@ -69,6 +72,10 @@ type DispatcherConfig struct {
 	// errors, etc. nil-safe — falls back to the default slog logger.
 	Logger *slog.Logger
 
+	// Metrics, when non-nil, drives the response counter on every
+	// completed request. nil is allowed for tests that don't care.
+	Metrics *observability.Metrics
+
 	// MaxBodyBytes is the request-body size limit. Above this the
 	// dispatcher returns 413. Defaults to 1 MiB if zero.
 	MaxBodyBytes int64
@@ -78,12 +85,17 @@ type DispatcherConfig struct {
 // be unique — duplicate registration is a programming error and
 // panics at construction (we'd rather crash loudly at startup than
 // silently route to whichever Provider was registered last).
-func NewDispatcher(cfg DispatcherConfig) *Dispatcher {
+//
+// cfg is taken by pointer because the field bag dragging in the
+// metrics struct + provider slice tips it past gocritic's hugeParam
+// threshold; callers pass `&DispatcherConfig{...}`.
+func NewDispatcher(cfg *DispatcherConfig) *Dispatcher {
 	d := &Dispatcher{
 		providers:       make(map[string]Provider, len(cfg.Providers)),
 		responseBuilder: cfg.ResponseBuilder,
 		executor:        cfg.Executor,
 		logger:          cfg.Logger,
+		metrics:         cfg.Metrics,
 		maxBodyBytes:    cfg.MaxBodyBytes,
 	}
 	if d.logger == nil {
@@ -149,8 +161,13 @@ func (d *Dispatcher) writeResponse(ctx context.Context, w http.ResponseWriter, r
 	traceID := traceIDFromContext(ctx)
 	reqID := httpx.RequestIDFromContext(ctx)
 
+	status := res.Kind.HTTPStatus()
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(res.Kind.HTTPStatus())
+	w.WriteHeader(status)
+
+	if d.metrics != nil {
+		d.metrics.JSMResponseTotal.WithLabelValues(strconv.Itoa(status)).Inc()
+	}
 
 	body := d.responseBuilder.BuildResponse(res, traceID, reqID)
 	if err := json.NewEncoder(w).Encode(body); err != nil {

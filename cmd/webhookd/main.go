@@ -94,7 +94,7 @@ func run(ctx context.Context) error {
 
 	var dispatcher http.Handler
 	if slices.Contains(cfg.EnabledProviders, "jsm") {
-		dispatcher, err = buildDispatcher(cfg, logger)
+		dispatcher, err = buildDispatcher(cfg, logger, metrics)
 		if err != nil {
 			return fmt.Errorf("dispatcher: %w", err)
 		}
@@ -192,13 +192,13 @@ func buildPublicHandler(
 // `WEBHOOK_PROVIDERS` containing "jsm" — when JSM is disabled the
 // public handler falls back to a 503 tombstone, useful for Phase 1
 // integration tests that don't want to stand up Kubernetes.
-func buildDispatcher(cfg *config.Config, logger *slog.Logger) (http.Handler, error) {
+func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observability.Metrics) (http.Handler, error) {
 	clients, err := k8s.NewClients(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("k8s clients: %w", err)
 	}
 
-	executor := webhook.NewExecutor(clients.CtrlClient, logger,
+	executor := webhook.NewExecutor(clients.CtrlClient, logger, metrics,
 		webhook.ExecutorConfig{
 			Namespace:    cfg.CR.Namespace,
 			FieldManager: cfg.CR.FieldManager,
@@ -217,13 +217,15 @@ func buildDispatcher(cfg *config.Config, logger *slog.Logger) (http.Handler, err
 			TSHeader:    cfg.TimestampHeader,
 			Skew:        cfg.TimestampSkew,
 		},
+		Metrics: metrics,
 	})
 
-	d := webhook.NewDispatcher(webhook.DispatcherConfig{
+	d := webhook.NewDispatcher(&webhook.DispatcherConfig{
 		Providers:       []webhook.Provider{provider},
 		ResponseBuilder: provider,
 		Executor:        executor,
 		Logger:          logger,
+		Metrics:         metrics,
 		MaxBodyBytes:    cfg.MaxBodyBytes,
 	})
 	return d, nil

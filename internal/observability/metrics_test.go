@@ -43,6 +43,12 @@ func TestNewMetrics_ExposesAllInstruments(t *testing.T) {
 	m.WebhookEvents.WithLabelValues("github", "push", "accepted").Inc()
 	m.WebhookSigResults.WithLabelValues("github", "valid").Inc()
 	m.WebhookProcessing.WithLabelValues("github", "push").Observe(0.05)
+	m.HTTPRateLimited.WithLabelValues("jsm").Add(0)
+	m.K8sApplyTotal.WithLabelValues("SAMLGroupMapping", "created").Inc()
+	m.K8sSyncDuration.WithLabelValues("SAMLGroupMapping", "ready").Observe(0.5)
+	m.JSMPayloadParseErrors.WithLabelValues("invalid_json").Add(0)
+	m.JSMNoopTotal.WithLabelValues("In Progress").Add(0)
+	m.JSMResponseTotal.WithLabelValues("200").Inc()
 
 	body := scrape(t, reg)
 
@@ -56,6 +62,12 @@ func TestNewMetrics_ExposesAllInstruments(t *testing.T) {
 		"webhookd_webhook_events_total",
 		"webhookd_webhook_signature_validation_total",
 		"webhookd_webhook_processing_duration_seconds",
+		"webhookd_http_rate_limited_total",
+		"webhookd_k8s_apply_total",
+		"webhookd_k8s_sync_duration_seconds",
+		"webhookd_jsm_payload_parse_errors_total",
+		"webhookd_jsm_noop_total",
+		"webhookd_jsm_response_total",
 		"webhookd_build_info",
 		"go_goroutines",
 		"process_cpu_seconds_total",

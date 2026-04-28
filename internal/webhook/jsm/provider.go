@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/donaldgifford/webhookd/internal/observability"
 	"github.com/donaldgifford/webhookd/internal/webhook"
 )
 
@@ -34,6 +35,10 @@ type Config struct {
 	// Signature carries the HMAC verification settings — secret,
 	// header names, skew, clock.
 	Signature SignatureConfig
+
+	// Metrics, when non-nil, drives the JSM noop / parse-error
+	// counters. nil-safe so unit tests don't have to wire metrics.
+	Metrics *observability.Metrics
 }
 
 // Provider implements webhook.Provider for Jira Service Management.
@@ -91,10 +96,12 @@ func (p *Provider) VerifySignature(r *http.Request, body []byte) error {
 func (p *Provider) Handle(_ context.Context, body []byte) (webhook.Action, error) {
 	payload, err := Decode(body)
 	if err != nil {
+		p.recordParseErr(decodeReason(err))
 		return nil, fmt.Errorf("%w: %w", webhook.ErrBadRequest, err)
 	}
 
 	if payload.Status() != p.cfg.TriggerStatus {
+		p.recordNoop(payload.Status())
 		return webhook.NoopAction{
 			Reason: fmt.Sprintf("ticket %s status %q does not match trigger %q",
 				payload.IssueKey(), payload.Status(), p.cfg.TriggerStatus),
@@ -103,14 +110,17 @@ func (p *Provider) Handle(_ context.Context, body []byte) (webhook.Action, error
 
 	providerGroupID, err := ExtractString(payload, p.cfg.FieldProviderGroupID)
 	if err != nil {
+		p.recordParseErr(extractReason(err))
 		return nil, classifyExtractErr(err)
 	}
 	role, err := ExtractString(payload, p.cfg.FieldRole)
 	if err != nil {
+		p.recordParseErr(extractReason(err))
 		return nil, classifyExtractErr(err)
 	}
 	project, err := ExtractString(payload, p.cfg.FieldProject)
 	if err != nil {
+		p.recordParseErr(extractReason(err))
 		return nil, classifyExtractErr(err)
 	}
 
@@ -123,6 +133,61 @@ func (p *Provider) Handle(_ context.Context, body []byte) (webhook.Action, error
 		IssueKey: payload.IssueKey(),
 		Spec:     spec,
 	}, nil
+}
+
+// recordNoop is nil-safe; the test path constructs Provider without
+// Metrics and we want zero ceremony at the call site.
+func (p *Provider) recordNoop(status string) {
+	if p.cfg.Metrics == nil {
+		return
+	}
+	p.cfg.Metrics.JSMNoopTotal.WithLabelValues(status).Inc()
+}
+
+// recordParseErr counts payload-rejected events by reason. Same
+// nil-safety pattern as recordNoop.
+func (p *Provider) recordParseErr(reason string) {
+	if p.cfg.Metrics == nil {
+		return
+	}
+	p.cfg.Metrics.JSMPayloadParseErrors.WithLabelValues(reason).Inc()
+}
+
+// Prometheus label values for JSMPayloadParseErrors. Stable; renaming
+// would break dashboards.
+const (
+	parseReasonInvalidJSON = "invalid_json"
+	parseReasonMissing     = "missing_field"
+	parseReasonEmpty       = "empty_field"
+	parseReasonType        = "wrong_type"
+)
+
+// decodeReason maps a Decode error onto its Prometheus label value.
+// Defaults to invalid_json for any unmapped error so dashboards never
+// see an empty label.
+func decodeReason(err error) string {
+	switch {
+	case errors.Is(err, ErrMissingIssue), errors.Is(err, ErrMissingIssueKey),
+		errors.Is(err, ErrMissingStatus):
+		return parseReasonMissing
+	default:
+		return parseReasonInvalidJSON
+	}
+}
+
+// extractReason maps an ExtractString error onto its Prometheus label
+// value.
+func extractReason(err error) string {
+	switch {
+	case errors.Is(err, ErrFieldMissing):
+		return parseReasonMissing
+	case errors.Is(err, ErrFieldEmpty):
+		return parseReasonEmpty
+	case errors.Is(err, ErrFieldType):
+		return parseReasonType
+	default:
+		return parseReasonMissing
+	}
 }
 
 // classifyExtractErr maps the `extract.go` sentinels onto webhook's

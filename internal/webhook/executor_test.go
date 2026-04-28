@@ -134,7 +134,7 @@ func sanitizeDNSLabel(s string) string {
 // that would panic on any method call.
 func TestExecutor_Execute_Noop(t *testing.T) {
 	t.Parallel()
-	exe := webhook.NewExecutor(nil, nil, webhook.ExecutorConfig{
+	exe := webhook.NewExecutor(nil, nil, nil, webhook.ExecutorConfig{
 		Namespace:   "wiz-operator",
 		SyncTimeout: time.Second,
 	})
@@ -153,7 +153,7 @@ func TestExecutor_Execute_Noop(t *testing.T) {
 // returns ResultReady once observedGeneration catches up.
 func TestExecutor_Execute_HappyPath(t *testing.T) {
 	c, ns := newTestClient(t)
-	exe := webhook.NewExecutor(c, nil, webhook.ExecutorConfig{
+	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
 		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  20 * time.Second,
@@ -199,7 +199,7 @@ func TestExecutor_Execute_HappyPath(t *testing.T) {
 // because the apply itself succeeded.
 func TestExecutor_Execute_Timeout(t *testing.T) {
 	c, ns := newTestClient(t)
-	exe := webhook.NewExecutor(c, nil, webhook.ExecutorConfig{
+	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
 		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  500 * time.Millisecond,
@@ -228,7 +228,7 @@ func TestExecutor_Execute_Timeout(t *testing.T) {
 // deadline to fire, and assert ResultTimeout — never a 4xx-mapped kind.
 func TestExecutor_Execute_ReadyFalseIsTransient(t *testing.T) {
 	c, ns := newTestClient(t)
-	exe := webhook.NewExecutor(c, nil, webhook.ExecutorConfig{
+	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
 		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  500 * time.Millisecond,
@@ -276,7 +276,7 @@ func TestExecutor_Execute_ReadyFalseIsTransient(t *testing.T) {
 // ResultUnprocessable.
 func TestExecutor_Execute_InvalidSpec(t *testing.T) {
 	c, ns := newTestClient(t)
-	exe := webhook.NewExecutor(c, nil, webhook.ExecutorConfig{
+	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
 		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  2 * time.Second,
@@ -301,7 +301,7 @@ func TestExecutor_Execute_InvalidSpec(t *testing.T) {
 // noops when the desired state already matches actual state.
 func TestExecutor_Execute_Idempotent(t *testing.T) {
 	c, ns := newTestClient(t)
-	exe := webhook.NewExecutor(c, nil, webhook.ExecutorConfig{
+	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
 		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  2 * time.Second,
