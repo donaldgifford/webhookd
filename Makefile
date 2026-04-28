@@ -130,6 +130,17 @@ ifneq ($(wildcard $(SETUP_ENVTEST)),)
 export KUBEBUILDER_ASSETS := $(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir=$(abspath $(ENVTEST_BIN_DIR)) -p path 2>/dev/null)
 endif
 
+## Helm Chart Toolchain
+
+HELM_UNITTEST_VERSION ?= 1.0.3
+
+.PHONY: chart-tools
+chart-tools: ## Install helm plugins not managed by mise (helm-unittest)
+	@ $(MAKE) --no-print-directory log-$@
+	@helm plugin list 2>/dev/null | awk '{print $$1}' | grep -qx unittest \
+		|| helm plugin install https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION)
+	@echo "✓ helm-unittest plugin installed (version $(HELM_UNITTEST_VERSION))"
+
 ## License Compliance
 
 license-check: ## Check dependency licenses against allowed list

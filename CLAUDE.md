@@ -43,10 +43,11 @@ Use `make` — it's the canonical entrypoint. `make help` lists targets.
 - `make run-local` — builds then runs `$(BIN_DIR)/webhookd`
 - `docker buildx bake` — builds `webhookd:dev` for the local platform via `docker-bake.hcl`. CI uses `docker buildx bake ci` for the multi-arch (linux/amd64 + linux/arm64) target.
 - `make tools-envtest` — installs `setup-envtest` and the Kubernetes binary set (`kube-apiserver`, `etcd`, `kubectl`) into `build/envtest/k8s/<version>/`. Pinned to `ENVTEST_K8S_VERSION` (default 1.31.0). The Makefile auto-exports `KUBEBUILDER_ASSETS` to subsequent `make test` invocations *only* if the binaries already exist, so a fresh checkout doesn't pay the install cost on every test run. Phase 4+ envtest tests will fail without this; phase 0–3 unit tests don't need it.
+- `make chart-tools` — installs the `helm-unittest` plugin (pinned via `HELM_UNITTEST_VERSION`, default 1.0.3). Idempotent. Run once after `mise install` so `helm unittest` works.
 
 ## Toolchain
 
-Tool versions are pinned in `mise.toml`. Use `mise install` to materialize them. Notable pins: Go 1.26.1, golangci-lint 2.11.4, markdownlint-cli2, yamlfmt/yamllint, prettier, checkmake, git-cliff, syft, govulncheck, go-licenses, goimports, mockery, godoc, cobra-cli. Also `docz` (from `github:donaldgifford/docz`) for managing docs.
+Tool versions are pinned in `mise.toml`. Use `mise install` to materialize them. Notable pins: Go 1.26.1, golangci-lint 2.11.4, markdownlint-cli2, yamlfmt/yamllint, prettier, checkmake, git-cliff, syft, govulncheck, go-licenses, goimports, mockery, godoc, cobra-cli. Also `docz` (from `github:donaldgifford/docz`) for managing docs. **Helm chart toolchain (IMPL-0003):** helm 3.19.0, kubectl 1.31.4, helm-cr 1.8.1, helm-ct 3.14.0, helm-diff 3.15.0, helm-docs 1.14.2 — all pinned in `mise.toml`. The `helm-unittest` plugin (1.0.3) is not a mise-managed binary; install via `make chart-tools`.
 
 ## Lint configuration quirks
 
