@@ -127,7 +127,7 @@ tools-envtest: $(SETUP_ENVTEST) ## Install envtest binaries (kube-apiserver, etc
 # binaries already exist — avoids forcing every test invocation to
 # install setup-envtest.
 ifneq ($(wildcard $(SETUP_ENVTEST)),)
-export KUBEBUILDER_ASSETS := $(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir=$(ENVTEST_BIN_DIR) -p path 2>/dev/null)
+export KUBEBUILDER_ASSETS := $(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir=$(abspath $(ENVTEST_BIN_DIR)) -p path 2>/dev/null)
 endif
 
 ## License Compliance

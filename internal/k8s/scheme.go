@@ -3,16 +3,13 @@
 
 // Package k8s wires webhookd's Kubernetes access: a single shared
 // runtime.Scheme that recognizes core types and the operator's CRDs,
-// plus the construction of the controller-runtime client and the
-// client-go clientset that share one rest.Config. Every other package
+// plus the construction of the controller-runtime client.WithWatch
+// (typed Patch / Get / Watch / List) and a client-go clientset for
+// any future code paths that need core-K8s-only APIs (events,
+// namespaces). Both share a single *rest.Config. Every other package
 // that talks to Kubernetes imports through this package — no
 // alternative paths to `ctrl.GetConfig()` or `runtime.NewScheme()` are
 // allowed.
-//
-// The dual-client decision (controller-runtime + clientset) is in
-// IMPL-0002 §Resolved Decisions §6: the executor uses the typed
-// controller-runtime client for SSA, and the clientset's
-// `cache.ListWatch` underpins `watch.UntilWithSync`.
 package k8s
 
 import (

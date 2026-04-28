@@ -18,17 +18,22 @@ import (
 
 // Clients groups the two flavors of K8s client webhookd uses. The
 // controller-runtime client owns typed Patch / Get / Watch on
-// SAMLGroupMapping; the clientset is currently used only by the
-// executor's `cache.ListWatch` for `watch.UntilWithSync`. Both are
-// constructed from the same *rest.Config so they share connection
-// behavior, auth, and rate limits.
+// SAMLGroupMapping (it knows the operator's scheme); the clientset is
+// kept around for any code path that needs core Kubernetes APIs
+// (events, namespaces, etc.) — Phase 2 doesn't yet, but the executor
+// keeps the option open without forcing every call site to mint its
+// own. Both are constructed from the same *rest.Config so they share
+// connection behavior, auth, and rate limits.
 type Clients struct {
-	// CtrlClient is the typed controller-runtime client used for
-	// SSA and Get against the operator's CRDs.
-	CtrlClient client.Client
+	// CtrlClient is the typed controller-runtime client used for SSA,
+	// Get, and List/Watch against the operator's CRDs. Returned as
+	// the WithWatch flavor so the executor's cache.ListWatch can call
+	// Watch() directly without a separate dynamic client.
+	CtrlClient client.WithWatch
 
-	// Clientset is the client-go clientset used to back
-	// `tools/watch.UntilWithSync` via `cache.ListWatch`.
+	// Clientset is the client-go clientset for any core-K8s-only code
+	// paths. Currently unused but cheap to construct from the shared
+	// rest.Config.
 	Clientset kubernetes.Interface
 
 	// RESTConfig is exposed for tests that need to construct
@@ -57,7 +62,7 @@ func NewClients(cfg *config.Config) (*Clients, error) {
 		return nil, fmt.Errorf("k8s config: %w", err)
 	}
 
-	ctrlClient, err := client.New(restCfg, client.Options{Scheme: Scheme})
+	ctrlClient, err := client.NewWithWatch(restCfg, client.Options{Scheme: Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("k8s client: %w", err)
 	}

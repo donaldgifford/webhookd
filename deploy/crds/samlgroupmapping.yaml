@@ -1,0 +1,88 @@
+# fixture only; canonical CRD ships with the operator project
+# (github.com/donaldgifford/wiz-operator). Schema mirrors the YAML
+# samples in docs/examples/samples/wiz_v1alpha1_samlgroupmapping.yaml
+# at a level sufficient for envtest — the full validation surface
+# (CEL rules, default values) lives in the operator's CRD.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: samlgroupmappings.wiz.webhookd.io
+spec:
+  group: wiz.webhookd.io
+  names:
+    kind: SAMLGroupMapping
+    listKind: SAMLGroupMappingList
+    plural: samlgroupmappings
+    singular: samlgroupmapping
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required: [identityProviderId, providerGroupId, roleRef, projectRefs]
+              properties:
+                identityProviderId:
+                  type: string
+                  minLength: 1
+                providerGroupId:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                roleRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                projectRefs:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
+      subresources:
+        status: {}

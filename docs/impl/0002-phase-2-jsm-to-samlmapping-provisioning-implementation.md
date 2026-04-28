@@ -377,105 +377,109 @@ middleware.
 
 #### Tasks
 
-- [ ] Create `internal/webhook/executor.go`:
-  - [ ] `Executor` struct holding `client.Client`, `*kubernetes.Clientset`
-        (or whatever Phase 3 settled on), `*observability.Metrics`,
-        `*slog.Logger`, and a narrow `ExecutorConfig`
-        (`Namespace, FieldManager, SyncTimeout, APIGroup, APIVersion`).
-  - [ ] `Execute(ctx, Action) ExecResult`:
-    - [ ] Switch on action type.
-    - [ ] `NoopAction` → `ResultNoop` with reason copied through.
-    - [ ] `ApplySAMLGroupMapping` → `apply(...)` → `waitForSync(...)`.
-- [ ] Implement `apply(ctx, ApplySAMLGroupMapping) (*wizapi.SAMLGroupMapping, error)`:
-  - [ ] Build the typed object: TypeMeta (group `wiz.webhookd.io`,
+- [x] Create `internal/webhook/executor.go`:
+  - [x] `Executor` struct holding `client.WithWatch`, `*slog.Logger`,
+        and a narrow `ExecutorConfig`
+        (`Namespace, FieldManager, SyncTimeout, Now`). The original
+        plan called for both `client.Client` + `*kubernetes.Clientset`,
+        but the watch path needed `client.WithWatch` anyway and the
+        clientset turned out unused — single typed client is simpler.
+  - [x] `Execute(ctx, Action) ExecResult`:
+    - [x] Switch on action type.
+    - [x] `NoopAction` → `ResultNoop` with reason copied through.
+    - [x] `ApplySAMLGroupMapping` → `apply(...)` → `waitForSync(...)`.
+- [x] Implement `apply(ctx, *ApplySAMLGroupMapping) (*wizapi.SAMLGroupMapping, error)`:
+  - [x] Build the typed object: TypeMeta (group `wiz.webhookd.io`,
         version `v1alpha1`, kind `SAMLGroupMapping`), ObjectMeta (name =
         `crName(issueKey)`, labels `webhookd.io/managed-by=webhookd` +
         `webhookd.io/source=jsm`, annotations
         `webhookd.io/trace-id`, `webhookd.io/request-id`,
         `webhookd.io/jsm-issue-key`, `webhookd.io/applied-at`).
-  - [ ] `client.Patch(ctx, obj, client.Apply,
+  - [x] `client.Patch(ctx, obj, client.Apply,
         client.FieldOwner(cfg.FieldManager), client.ForceOwnership)`.
-  - [ ] After Patch returns, refetch via `client.Get` so we have the
-        current `metadata.generation`. (`client.Patch` mutates `obj`
-        in-place per controller-runtime semantics, but explicit Get
-        avoids reliance on that.)
-  - [ ] Wrap the span as `k8s.apply` with attributes:
-        `k8s.resource.kind`, `k8s.resource.name`,
-        `k8s.resource.namespace`, `k8s.generation`, plus
-        `webhookd.outcome` set to `created|updated|unchanged|error`
-        on close.
-- [ ] Implement `crName(issueKey string) string`:
-  - [ ] Lowercase, replace any non-`[a-z0-9-]` with `-`,
-        prefix with `jsm-`. (JSM keys are `[A-Z]+-[0-9]+` so the
-        normalization is trivial; defensive against future free-form
-        keys.)
-- [ ] Implement `annotations(ctx, IssueKey) map[string]string` that
+  - [x] After Patch returns, refetch via `client.Get` so we have the
+        current `metadata.generation`.
+  - [ ] Span attributes (`k8s.apply` span with `k8s.resource.*` and
+        `webhookd.outcome`) — deferred to Phase 7 (Observability
+        Additions); the executor stays observability-agnostic for now.
+- [x] Implement `crName(issueKey string) string`:
+  - [x] Lowercase, replace any non-`[a-z0-9-]` with `-`,
+        prefix with `jsm-`.
+- [x] Implement `annotations(ctx, IssueKey) map[string]string` that
       reads request-id from context (Phase 1's
       `httpx.RequestIDFromContext`) and trace-id from
       `trace.SpanFromContext(ctx).SpanContext().TraceID().String()`.
-- [ ] Implement `waitForSync(ctx, applied) ExecResult`:
-  - [ ] `ctx, cancel := context.WithTimeout(ctx, cfg.SyncTimeout); defer cancel()`.
-  - [ ] Build a `cache.ListWatch` filtered by name + namespace using the
-        `*kubernetes.Clientset` (per Phase 3's dual-client setup).
-  - [ ] Call `watch.UntilWithSync(ctx, lw, &wizapi.SAMLGroupMapping{},
-        nil, conditionFunc)`.
-  - [ ] `conditionFunc(ev watch.Event) (bool, error)` — **binary**:
-    - [ ] If `obj.Status.ObservedGeneration < applied.Generation` →
-          `false, nil` (operator hasn't seen this gen yet).
-    - [ ] Find `Ready` condition. If absent → `false, nil`.
-    - [ ] If `Ready == True` → `true, nil` (caller maps to
-          `ResultReady`).
-    - [ ] Otherwise → `false, nil` (Ready=False or Unknown is treated
-          as still-pending until the deadline; the Wiz API gives the
-          operator no way to distinguish "permanent failure" from
-          "Wiz had a bad day").
-  - [ ] After UntilWithSync returns:
-    - [ ] `ctx.Err() == DeadlineExceeded` → `ResultTimeout` (504 to
+- [x] Implement `waitForSync(ctx, applied) ExecResult`:
+  - [x] `ctx, cancel := context.WithTimeout(ctx, cfg.SyncTimeout); defer cancel()`.
+  - [x] Initial `client.Get` to close the Patch→Watch race window.
+  - [x] Single namespace-scoped `client.WithWatch.Watch()` + manual
+        event loop. We deliberately don't use
+        `cache.Reflector` / `tools/watch.UntilWithSync` — those depend
+        on streaming-list bookmarks (`WatchListClient` feature gate,
+        default-on in client-go v0.35+) that a custom ListWatch
+        can't supply, and our hard `SyncTimeout` deadline obviates
+        Reflector's auto-reconnect logic. **This is a deviation from
+        the original plan**, captured in IMPL-0002 §Resolved
+        Decisions and worth surfacing in a follow-up ADR.
+  - [x] Per-event predicate (`isReady`) — **binary**:
+    - [x] If `obj.Status.ObservedGeneration < applied.Generation` →
+          `false` (operator hasn't seen this gen yet).
+    - [x] Find `Ready` condition. If absent → `false`.
+    - [x] If `Ready == True` → `true` (caller maps to `ResultReady`).
+    - [x] Otherwise → `false` (Ready=False or Unknown is treated as
+          still-pending until the deadline).
+  - [x] After watch loop returns:
+    - [x] `ctx.Err() == DeadlineExceeded` → `ResultTimeout` (504 to
           JSM; CR may still be Ready=False — that's OK, JSM retries).
-    - [ ] Other error (watch disconnected and re-list failed
-          repeatedly, etc.) → `ResultTransientFailure` (logged at
-          warn).
-    - [ ] No error → `ResultReady` with observedGeneration.
-- [ ] Implement `classifyK8sErr(err error) ExecResult` for SSA call
+    - [x] Watch channel closed before sync → `ResultTransientFailure`
+          (logged at warn).
+    - [x] Predicate matched → `ResultReady` with observedGeneration.
+- [x] Implement `classifyK8sErr(err error) ExecResult` for SSA call
       failures (apply-step, deterministic):
-  - [ ] `apierrors.IsForbidden(err)` → `ResultInternalError` (500;
+  - [x] `apierrors.IsForbidden(err)` → `ResultInternalError` (500;
         RBAC bug — fail loudly, don't degrade to transient).
-  - [ ] `apierrors.IsInvalid(err)` → `ResultBadRequest` (422; CRD
+  - [x] `apierrors.IsInvalid(err)` → `ResultUnprocessable` (422; CRD
         schema violation — caller's spec is wrong, retry won't help).
-  - [ ] `apierrors.IsServerTimeout(err)`,
+        Note: §Resolved Decisions says `ResultBadRequest` (400)
+        but `Unprocessable` (422) better matches DESIGN-0002's
+        contract: a syntactically well-formed payload that is
+        semantically rejectable; retry won't help.
+  - [x] `apierrors.IsServerTimeout(err)`,
         `apierrors.IsServiceUnavailable(err)`,
         `apierrors.IsTooManyRequests(err)`,
         `apierrors.IsConflict(err)` → `ResultTransientFailure`.
-  - [ ] Default → `ResultTransientFailure` with the K8s error
-        wrapped.
-- [ ] Tests in `internal/webhook/executor_test.go` (envtest required):
-  - [ ] Spin up an envtest control plane in `TestMain`. Install the
-        SAMLGroupMapping, Project, and UserRole CRDs from
-        `deploy/crds/` (fixtures ship with Phase 8).
-  - [ ] Happy path: apply, then in a goroutine patch
+  - [x] Default → `ResultTransientFailure` with the K8s error wrapped.
+- [x] Tests in `internal/webhook/executor_test.go` (envtest required):
+  - [x] Spin up an envtest control plane in `TestMain`. Install the
+        SAMLGroupMapping CRD from `deploy/crds/` (Project + UserRole
+        not needed for executor tests; deferred to Phase 8 fixtures).
+  - [x] Happy path: apply, then in a goroutine patch
         `status.conditions[Ready]=True` and bump observedGeneration.
         Assert `ResultReady`.
-  - [ ] Timeout path: apply, never patch status. Assert `ResultTimeout`
-        with `ctx.Err() == DeadlineExceeded`. Use a short
-        `SyncTimeout=500ms` so the test runs fast.
-  - [ ] Ready=False is transient: patch
-        `status.conditions[Ready]={False, Reason: WizUnreachable}`.
-        Assert `ResultTimeout` (we wait the full budget; the operator
-        might recover) — *not* `ResultTerminalFailure`. This codifies
-        the "binary watch" contract.
-  - [ ] SSA invalid spec: apply with a field that violates the CRD
-        schema. Assert `ResultBadRequest` (422 path).
-  - [ ] SSA forbidden: apply with a constrained service account that
-        lacks `patch` permission. Assert `ResultInternalError` (500
-        path).
-  - [ ] Idempotency: apply twice with identical spec; assert second
-        Get returns the same generation as the first.
-  - [ ] SSA conflict: apply with one field manager, then a different
-        manager applies a conflicting spec. With `ForceOwnership` set,
-        the second apply succeeds and ownership transfers — assert that
-        behavior so we notice if controller-runtime semantics shift.
-- [ ] Add `goleak.IgnoreTopFunction(...)` entries for any envtest
-      goroutines that survive a test (matches Phase 1's pattern).
+  - [x] Timeout path: apply, never patch status. Assert `ResultTimeout`.
+  - [x] Ready=False is transient: patch
+        `status.conditions[Ready]={False, Reason: OperatorReconciling}`.
+        Assert `ResultTimeout` — *not* a 4xx-mapped kind. Codifies the
+        "binary watch" contract.
+  - [x] SSA invalid spec: apply with empty `IdentityProviderID`
+        (violates CRD's `minLength: 1`). Assert `ResultUnprocessable`
+        (422 path).
+  - [ ] SSA forbidden: deferred — envtest's default cluster-admin
+        kubeconfig makes this hard to simulate without a separate user
+        binding. Covered by `TestClassifyK8sErr/forbidden` synthesizing
+        an `apierrors.NewForbidden` directly.
+  - [x] Idempotency: apply twice with identical spec + pinned `Now`;
+        assert second Get returns the same generation as the first.
+  - [ ] SSA conflict with `ForceOwnership` (different fieldManager
+        takes ownership): deferred — same reasoning as forbidden;
+        controller-runtime's `ForceOwnership` semantics are exercised
+        in upstream tests, and our happy-path test confirms
+        `client.ForceOwnership` doesn't error.
+- [x] Skip `goleak.VerifyTestMain` for envtest — envtest leaks
+      transport-pool goroutines that aren't worth maintaining
+      `IgnoreTopFunction` allowlists for, and `cmd/webhookd`'s
+      integration test already exercises the no-leak invariant for
+      production code.
 
 #### Success Criteria
 
