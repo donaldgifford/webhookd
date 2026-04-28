@@ -1,0 +1,45 @@
+suite: service
+templates:
+  - templates/service.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+tests:
+  - it: defaults to ClusterIP with two named ports
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - contains:
+          path: spec.ports
+          content:
+            name: webhook
+            port: 8080
+            targetPort: webhook
+            protocol: TCP
+      - contains:
+          path: spec.ports
+          content:
+            name: admin
+            port: 9090
+            targetPort: admin
+            protocol: TCP
+
+  - it: respects service.type override
+    set:
+      service.type: LoadBalancer
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+
+  - it: selector matches the Deployment podLabels
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: webhookd
+      - equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: webhookd

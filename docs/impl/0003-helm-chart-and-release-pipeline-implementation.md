@@ -212,89 +212,106 @@ of the chart; gated templates come in Phase 2.
 
 #### Tasks
 
-- [ ] `templates/deployment.yaml`:
-  - [ ] Full Pod spec: `replicas`, `selector`, named container
+- [x] `templates/deployment.yaml`:
+  - [x] Full Pod spec: `replicas`, `selector`, named container
         `webhookd`, image from `.Values.image.{repository,tag,pullPolicy}`
         with `appVersion` fallback for tag.
-  - [ ] Two named container ports: `webhook` (`config.port`, default
+  - [x] Two named container ports: `webhook` (`config.port`, default
         8080) and `admin` (`config.adminPort`, default 9090).
-  - [ ] `livenessProbe` + `readinessProbe` rendered from values, both
+  - [x] `livenessProbe` + `readinessProbe` rendered from values, both
         targeting the `admin` named port (Phase 1 of DESIGN-0001 only
         ships `/healthz` on admin; `/readyz` is also on admin).
-  - [ ] All core `WEBHOOK_*` env vars from `.Values.config.*`:
-        `WEBHOOK_PORT`, `WEBHOOK_ADMIN_PORT`, `WEBHOOK_SHUTDOWN_TIMEOUT`,
-        `WEBHOOK_BODY_MAX_BYTES`, `WEBHOOK_RATE_LIMIT_*`,
-        `WEBHOOK_TRACING_*`, `WEBHOOK_PPROF_ENABLED`,
-        `WEBHOOK_PROVIDERS` (computed from `webhookd.enabledProviders`
-        helper), and `WEBHOOK_KUBECONFIG` empty for in-cluster.
-  - [ ] Provider env-var block guarded by `{{- if .Values.jsm.enabled }}`:
+  - [x] All core `WEBHOOK_*` env vars from `.Values.config.*`:
+        `WEBHOOK_ADDR`, `WEBHOOK_ADMIN_ADDR` (note: not
+        `WEBHOOK_PORT`/`_ADMIN_PORT` — actual env vars are bind
+        addresses, not bare ports; chart synthesizes `:<port>` from
+        the int values), `WEBHOOK_SHUTDOWN_TIMEOUT`,
+        `WEBHOOK_MAX_BODY_BYTES` (binary spelling, not
+        `BODY_MAX_BYTES`), `WEBHOOK_RATE_LIMIT_*`,
+        `WEBHOOK_TRACING_*` (with conditional `OTEL_EXPORTER_OTLP_ENDPOINT`
+        when tracing is on and `tracing.endpoint` is set),
+        `WEBHOOK_PPROF_ENABLED`, `WEBHOOK_PROVIDERS` (computed from
+        `webhookd.enabledProviders` helper), and `WEBHOOK_KUBECONFIG`
+        empty for in-cluster.
+  - [x] Provider env-var block guarded by `{{- if .Values.jsm.enabled }}`:
         `WEBHOOK_JSM_*` and `WEBHOOK_CR_*` keys per IMPL-0002 config
         layout. `crIdentityProviderID` rendered with `required` so
         mis-config fails template-time.
-  - [ ] `WEBHOOK_SIGNING_SECRET` from `secretKeyRef`, name resolved
-        per `.Values.signing.{createSecret,existingSecret}`.
-  - [ ] `securityContext` rendered from values (default: read-only root
+  - [x] `WEBHOOK_SIGNING_SECRET` from `secretKeyRef`, name resolved
+        per `.Values.signing.{createSecret,existingSecret}` via
+        `webhookd.signingSecretName` / `webhookd.signingSecretKey`
+        helpers.
+  - [x] `securityContext` rendered from values (default: read-only root
         FS, run-as-non-root with uid/gid 65532, drop ALL capabilities,
         no privilege escalation).
-  - [ ] `volumeMounts` for `/tmp` emptyDir (read-only root FS forces
+  - [x] `volumeMounts` for `/tmp` emptyDir (read-only root FS forces
         a writable tempdir for OTel batch processor + signal-handler
         scratch).
-  - [ ] `resources`, `nodeSelector`, `tolerations`, `affinity`,
+  - [x] `resources`, `nodeSelector`, `tolerations`, `affinity`,
         `topologySpreadConstraints`, `imagePullSecrets`, `podAnnotations`,
         `podLabels` all rendered from values.
-- [ ] `templates/service.yaml`:
-  - [ ] `type: {{ .Values.service.type }}` (default ClusterIP).
-  - [ ] Two named service ports: `webhook` → `webhookPort` →
+- [x] `templates/service.yaml`:
+  - [x] `type: {{ .Values.service.type }}` (default ClusterIP).
+  - [x] Two named service ports: `webhook` → `webhookPort` →
         `webhook` targetPort, `admin` → `adminPort` → `admin`
         targetPort.
-- [ ] `templates/serviceaccount.yaml` gated on `serviceAccount.create=true`.
-- [ ] `templates/role.yaml`:
-  - [ ] Gated on `rbac.create=true`.
-  - [ ] `metadata.namespace: {{ .Values.rbac.targetNamespace }}` so it
+- [x] `templates/serviceaccount.yaml` gated on `serviceAccount.create=true`.
+- [x] `templates/role.yaml`:
+  - [x] Gated on `rbac.create=true`.
+  - [x] `metadata.namespace: {{ .Values.rbac.targetNamespace }}` so it
         lands in `wiz-operator` (or override) regardless of release ns.
-  - [ ] Rule: `apiGroups=[wiz.webhookd.io]`, `resources=[samlgroupmappings]`,
+  - [x] Rule: `apiGroups=[wiz.webhookd.io]`, `resources=[samlgroupmappings]`,
         `verbs=[get, list, watch, patch]` (matches IMPL-0002 RBAC).
-- [ ] `templates/rolebinding.yaml`:
-  - [ ] Same gate, same target ns.
-  - [ ] Subject: SA in `.Release.Namespace`; roleRef: matching Role.
-- [ ] `templates/secret.yaml`:
-  - [ ] Gated on `signing.createSecret=true`.
-  - [ ] `data.webhookSecret: {{ .Values.signing.secret | b64enc | quote }}`,
-        with `required` enforcing presence.
-- [ ] `tests/deployment_test.yaml` — helm-unittest cases:
-  - [ ] Renders correct image (default = `Chart.AppVersion` fallback).
-  - [ ] Custom `image.tag` overrides.
-  - [ ] `replicaCount: 3` reflected in spec.
-  - [ ] Provider env vars present when `jsm.enabled=true`.
-  - [ ] `jsm.crIdentityProviderID=""` + `jsm.enabled=true` →
+- [x] `templates/rolebinding.yaml`:
+  - [x] Same gate, same target ns.
+  - [x] Subject: SA in `.Release.Namespace`; roleRef: matching Role.
+- [x] `templates/secret.yaml`:
+  - [x] Gated on `signing.createSecret=true`.
+  - [x] `data.webhookSecret: {{ .Values.signing.secret | b64enc | quote }}`,
+        with `required` enforcing presence; `helm.sh/resource-policy:
+        keep` annotation so a `helm uninstall` can't accidentally
+        delete the signing key out from under in-flight requests.
+- [x] `tests/deployment_test.yaml` — helm-unittest cases (16 tests):
+  - [x] Renders correct image (default = `Chart.AppVersion` fallback).
+  - [x] Custom `image.tag` overrides.
+  - [x] `replicaCount: 3` reflected in spec.
+  - [x] Provider env vars present when `jsm.enabled=true`.
+  - [x] `jsm.crIdentityProviderID=""` + `jsm.enabled=true` →
         template error containing the `required` message.
-  - [ ] `WEBHOOK_PROVIDERS` value matches enabled-providers helper.
-  - [ ] `signing.createSecret=true` + `signing.secret=foo` → secretKeyRef
+  - [x] `WEBHOOK_PROVIDERS` value matches enabled-providers helper
+        (and is empty when no providers enabled).
+  - [x] `signing.createSecret=true` + `signing.secret=foo` → secretKeyRef
         points at the chart-local Secret.
-  - [ ] `signing.createSecret=false` + `signing.existingSecret=foo` →
-        secretKeyRef points at `foo`; `existingSecret=""` →
-        template error.
-  - [ ] securityContext and resources reflected per values.
-  - [ ] livenessProbe / readinessProbe target the admin port by name.
-- [ ] `tests/service_test.yaml`:
-  - [ ] Default ClusterIP type, two named ports (`webhook`, `admin`).
-  - [ ] `service.type: LoadBalancer` reflected.
-- [ ] `tests/serviceaccount_test.yaml`:
-  - [ ] Created by default; `serviceAccount.create=false` skips.
-  - [ ] `serviceAccount.name=foo` overrides.
-- [ ] `tests/role_test.yaml`:
-  - [ ] `metadata.namespace` equals `rbac.targetNamespace` value, not
+  - [x] `signing.createSecret=false` + `signing.existingSecret=foo` →
+        secretKeyRef points at `foo` with `existingSecretKey` honored;
+        `existingSecret=""` → template error.
+  - [x] securityContext and resources reflected per values.
+  - [x] livenessProbe / readinessProbe target the admin port by name.
+  - [x] Both named container ports declared.
+  - [x] `/tmp` emptyDir volume + mount present.
+- [x] `tests/service_test.yaml` (3 tests):
+  - [x] Default ClusterIP type, two named ports (`webhook`, `admin`).
+  - [x] `service.type: LoadBalancer` reflected.
+- [x] `tests/serviceaccount_test.yaml` (4 tests):
+  - [x] Created by default; `serviceAccount.create=false` skips.
+  - [x] `serviceAccount.name=foo` overrides; annotations propagate.
+- [x] `tests/role_test.yaml` (5 tests):
+  - [x] `metadata.namespace` equals `rbac.targetNamespace` value, not
         release namespace.
-  - [ ] `rbac.create=false` skips.
-  - [ ] verbs are exactly `[get, list, watch, patch]`.
-- [ ] `tests/rolebinding_test.yaml`:
-  - [ ] Subject namespace equals `.Release.Namespace`, not the
+  - [x] `rbac.create=false` skips.
+  - [x] `rbac.targetNamespace=""` fails templating.
+  - [x] verbs are exactly `[get, list, watch, patch]`.
+- [x] `tests/rolebinding_test.yaml` (3 tests):
+  - [x] Subject namespace equals `.Release.Namespace`, not the
         target namespace.
-  - [ ] `rbac.create=false` skips.
-- [ ] `tests/secret_test.yaml`:
-  - [ ] `signing.createSecret=true` + `signing.secret=foo` →
-        Secret rendered with `webhookSecret` key.
-  - [ ] `signing.createSecret=false` → no Secret rendered.
+  - [x] `rbac.create=false` skips.
+  - [x] roleRef points at the chart-rendered Role.
+- [x] `tests/secret_test.yaml` (3 tests):
+  - [x] `signing.createSecret=true` + `signing.secret=foo` →
+        Secret rendered with `webhookSecret` key + `keep` policy.
+  - [x] `signing.createSecret=false` → no Secret rendered.
+  - [x] `signing.createSecret=true` + `signing.secret=""` fails
+        templating.
 
 #### Success Criteria
 
@@ -303,13 +320,17 @@ of the chart; gated templates come in Phase 2.
     --set signing.createSecret=true \
     --set signing.secret=bar \
     -n webhookd` produces functionally-equivalent manifests to
-  `kubectl apply -k deploy/rbac/` plus a working Deployment.
+  `kubectl apply -k deploy/rbac/` plus a working Deployment. ✅
 - `helm install webhookd charts/webhookd -n webhookd --create-namespace` against
   a kind cluster with `deploy/crds/samlgroupmapping.yaml` pre-applied
-  brings up a Pod that reaches `Ready=True`.
+  brings up a Pod that reaches `Ready=True`. ⏳ (validated in Phase 6
+  smoke test against a real cluster).
 - `helm-unittest charts/webhookd` passes all Phase 1 cases.
+  ✅ — 34 tests across 6 suites.
 - A POST to the deployed Pod's webhook URL with a signed JSM payload
   produces a `SAMLGroupMapping` CR in `wiz-operator` namespace.
+  ⏳ (Phase 6 smoke test).
+- `make helm-ct-lint` clean. ✅
 
 ---
 

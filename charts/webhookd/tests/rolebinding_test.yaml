@@ -1,0 +1,36 @@
+suite: rolebinding
+templates:
+  - templates/rolebinding.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+tests:
+  - it: cross-namespace binding — RoleBinding in target ns, subject in release ns
+    asserts:
+      - isKind:
+          of: RoleBinding
+      - equal:
+          path: metadata.namespace
+          value: wiz-operator
+      - equal:
+          path: subjects[0].namespace
+          value: webhookd
+      - equal:
+          path: subjects[0].name
+          value: webhookd
+
+  - it: rbac.create=false skips rendering
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: roleRef points at the chart-rendered Role
+    asserts:
+      - equal:
+          path: roleRef.kind
+          value: Role
+      - equal:
+          path: roleRef.name
+          value: webhookd
