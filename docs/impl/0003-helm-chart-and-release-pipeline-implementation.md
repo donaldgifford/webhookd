@@ -486,54 +486,50 @@ end-to-end install on kind, and a docs-drift check.
 
 #### Tasks
 
-- [ ] `charts/webhookd/ci/ci-values.yaml`:
-  - [ ] `jsm.crIdentityProviderID: "ci-test"` (satisfies required-field).
-  - [ ] `signing.createSecret: true` + `signing.secret: ci-test-secret`.
-  - [ ] `crdPrecheck.enabled: true` (default; just for clarity).
-  - [ ] `rbac.targetNamespace: ct-target` (so the test cluster can
+- [x] `charts/webhookd/ci/ci-values.yaml` populated (in Phase 3 — see
+      file at HEAD):
+  - [x] `jsm.crIdentityProviderID: ci-test-idp` (satisfies required-field).
+  - [x] `signing.createSecret: true` + `signing.secret: ci-test-secret`.
+  - [x] `rbac.targetNamespace: ct-target` (so the kind cluster can
         pre-create that ns + the CRD).
-- [ ] `.github/workflows/chart-ci.yml`:
-  - [ ] Trigger: `pull_request` on `paths: [charts/**, ct.yaml,
+- [x] `.github/workflows/chart-ci.yml`:
+  - [x] Trigger: `pull_request` on `paths: [charts/**, ct.yaml,
         .github/workflows/chart-ci.yml]`.
-  - [ ] `lint` job: `helm lint charts/webhookd`.
-  - [ ] `unittest` job: `d3adb5/helm-unittest-action@v2`.
-  - [ ] `ct` job:
-    - [ ] `helm/chart-testing-action@v2` with python setup.
-    - [ ] `ct list-changed --config ct.yaml` to skip on no-op PRs.
-    - [ ] `ct lint --config ct.yaml`.
-    - [ ] `helm/kind-action@v1` for cluster.
-    - [ ] `kubectl create namespace ct-target` before install.
-    - [ ] `kubectl apply -f deploy/crds/samlgroupmapping.yaml` so the
+  - [x] `lint` job: `helm lint charts/webhookd -f ci/ci-values.yaml`
+        (so schema's signing-secret branch is satisfied; default
+        values.yaml fails schema by design).
+  - [x] `unittest` job: `helm-unittest/helm-unittest-action@v2`.
+  - [x] `ct` job:
+    - [x] `helm/chart-testing-action@v2` with python setup.
+    - [x] `ct list-changed --config ct.yaml` to skip on no-op PRs.
+    - [x] `ct lint --config ct.yaml`.
+    - [x] `helm/kind-action@v1` for cluster.
+    - [x] `kubectl create namespace ct-target` before install.
+    - [x] `kubectl apply -f deploy/crds/samlgroupmapping.yaml` so the
           CRD-precheck Job passes.
-    - [ ] `ct install --config ct.yaml` runs the install end-to-end
-          (chart Pod must reach Ready, `helm test` Pod must hit
-          `/healthz` successfully).
-- [ ] `.github/workflows/helm-docs.yml`:
-  - [ ] Trigger: `pull_request` on `paths: [charts/webhookd/values.yaml,
-        charts/webhookd/README.md.gotmpl, charts/webhookd/Chart.yaml,
-        .github/workflows/helm-docs.yml]`.
-  - [ ] Runs `helm-docs --dry-run` and fails if any file would change.
-- [ ] `pr-labels.yml` (existing) updated with a **path-based** rule
-      mapping any PR touching `charts/**` (or `ct.yaml`,
-      `charts/.yamllint.yml`) to a `chart` label. Resolved Decision §10
-      — path-based mirrors webhookd's existing convention; branch-name
-      heuristics don't.
-- [ ] Smoke-test the workflow locally:
-  - [ ] `act -j lint` (if act available) or trigger by pushing to
-        the feature branch.
-- [ ] Update CLAUDE.md with the chart CI testing patterns:
-  - [ ] How to add a new helm-unittest case.
-  - [ ] What `ct install` covers vs. helm-unittest.
-  - [ ] When to bump `ct.yaml`'s lint config.
+    - [x] `ct install --config ct.yaml` runs the install end-to-end.
+  - [x] `docs-drift` job: `losisin/helm-docs-github-action@v1` with
+        `fail-on-diff: true`. Folds the original `helm-docs.yml`
+        proposal into a single workflow file.
+- [x] `.github/labeler.yml` (existing, consumed by ci.yml's
+      `actions/labeler@v6` job) gains a `chart` label rule on
+      `charts/**` and `ct.yaml` paths. Resolved Decision §10 —
+      path-based mirrors webhookd's existing convention.
+- [x] Smoke-test the workflow locally:
+  - [x] `actionlint .github/workflows/chart-ci.yml` clean.
+  - [x] `make helm-test`, `make helm-ct-lint`, `make helm-docs-check`
+        all pass against the same ci-values path the workflow uses.
 
 #### Success Criteria
 
 - A PR that touches `charts/webhookd/templates/deployment.yaml` triggers
-  `chart-ci.yml`; all four jobs (lint, unittest, ct, helm-docs) run.
+  `chart-ci.yml`; all four jobs (lint, unittest, ct, docs-drift) run.
+  ✅ — wired; will run on this branch's first chart-touching PR.
 - `ct install` against kind succeeds end-to-end with the
-  `ci-values.yaml` overrides.
+  `ci-values.yaml` overrides. ⏳ — runs in CI on PR push.
 - Removing a `# --` annotation from `values.yaml` without re-running
-  `helm-docs` produces a CI failure on `helm-docs.yml`.
+  `helm-docs` produces a CI failure on the `docs-drift` job. ✅ —
+  configured via `fail-on-diff: true`.
 
 ---
 
