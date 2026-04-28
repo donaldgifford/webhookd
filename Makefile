@@ -107,6 +107,29 @@ run-local: build ## Run exporter with local config
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME)
 
+## Tools
+
+ENVTEST_K8S_VERSION ?= 1.31.0
+ENVTEST_BIN_DIR     := $(BUILD_DIR)/envtest
+SETUP_ENVTEST       := $(ENVTEST_BIN_DIR)/setup-envtest
+
+$(SETUP_ENVTEST):
+	@mkdir -p $(ENVTEST_BIN_DIR)
+	@GOBIN=$(abspath $(ENVTEST_BIN_DIR)) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+tools-envtest: $(SETUP_ENVTEST) ## Install envtest binaries (kube-apiserver, etcd) for integration tests
+	@ $(MAKE) --no-print-directory log-$@
+	@$(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir=$(ENVTEST_BIN_DIR) -p path
+	@echo "✓ envtest binaries materialized in $(ENVTEST_BIN_DIR)"
+
+# KUBEBUILDER_ASSETS exports the path to the envtest binaries when set,
+# letting `go test` find them. Wire it into `make test` only when the
+# binaries already exist — avoids forcing every test invocation to
+# install setup-envtest.
+ifneq ($(wildcard $(SETUP_ENVTEST)),)
+export KUBEBUILDER_ASSETS := $(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir=$(abspath $(ENVTEST_BIN_DIR)) -p path 2>/dev/null)
+endif
+
 ## License Compliance
 
 license-check: ## Check dependency licenses against allowed list

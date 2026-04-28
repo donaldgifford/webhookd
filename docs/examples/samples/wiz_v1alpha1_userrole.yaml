@@ -1,0 +1,16 @@
+apiVersion: wiz.webhookd.io/v1alpha1
+kind: UserRole
+metadata:
+  labels:
+    app.kubernetes.io/name: wiz-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: platform-engineer
+spec:
+  name: "Platform Engineer"
+  description: "Read and update security findings, create reports"
+  scopes:
+    - "read:issues"
+    - "update:issues"
+    - "create:reports"
+    - "read:reports"
+  isProjectScoped: true

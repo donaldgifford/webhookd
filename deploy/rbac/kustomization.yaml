@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 webhookd contributors
+#
+# Kustomize entry point so deployers can `kubectl apply -k deploy/rbac/`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - serviceaccount.yaml
+  - role.yaml
+  - rolebinding.yaml

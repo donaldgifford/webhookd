@@ -33,5 +33,5 @@ docz create design "Your Design Title"
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
 | DESIGN-0001 | Stateless Webhook Receiver — Phase 1 | Implemented | 2026-04-21 | Donald Gifford | [0001-stateless-webhook-receiver-phase-1.md](0001-stateless-webhook-receiver-phase-1.md) |
-| DESIGN-0002 | JSM Webhook → SAMLMapping Provisioning — Phase 2 | Draft | 2026-04-21 | Donald Gifford | [0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md](0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md) |
+| DESIGN-0002 | JSM Webhook → SAMLMapping Provisioning — Phase 2 | Implemented | 2026-04-21 | Donald Gifford | [0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md](0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md) |
 <!-- END DOCZ AUTO-GENERATED -->

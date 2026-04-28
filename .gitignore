@@ -37,3 +37,6 @@ build/
 # achived docs
 # keep this in here.
 archive/
+
+# donald-loop state — per-session, not part of the project
+.claude/donald-loop.local.md

@@ -1,0 +1,55 @@
+{
+  "timestamp": 1700000000,
+  "webhookEvent": "jira:issue_updated",
+  "user": {
+    "self": "https://example.atlassian.net/rest/api/2/user?accountId=712020:00000000-0000-0000-0000-000000000000",
+    "accountId": "712020:00000000-0000-0000-0000-000000000000",
+    "displayName": "Automation User",
+    "active": true
+  },
+  "issue": {
+    "id": "10042",
+    "self": "https://example.atlassian.net/rest/api/2/issue/10042",
+    "key": "SEC-100",
+    "fields": {
+      "summary": "Provision Wiz access for team-platform",
+      "status": {
+        "self": "https://example.atlassian.net/rest/api/2/status/3",
+        "name": "Ready to Provision",
+        "id": "3",
+        "statusCategory": {
+          "self": "https://example.atlassian.net/rest/api/2/statuscategory/2",
+          "id": 2,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      },
+      "customfield_10201": "team-platform",
+      "customfield_10202": "admin",
+      "customfield_10203": "core",
+      "labels": ["wiz", "provisioning"],
+      "priority": {
+        "name": "Medium",
+        "id": "3"
+      },
+      "reporter": {
+        "displayName": "Alice",
+        "accountId": "712020:11111111-1111-1111-1111-111111111111"
+      }
+    }
+  },
+  "changelog": {
+    "id": "99999",
+    "items": [
+      {
+        "field": "status",
+        "fieldtype": "jira",
+        "from": "1",
+        "fromString": "To Do",
+        "to": "3",
+        "toString": "Ready to Provision"
+      }
+    ]
+  }
+}

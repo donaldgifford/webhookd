@@ -1,7 +1,7 @@
 ---
 id: DESIGN-0002
 title: "JSM Webhook → SAMLMapping Provisioning — Phase 2"
-status: Draft
+status: Implemented
 author: Donald Gifford
 created: 2026-04-21
 ---
@@ -10,7 +10,18 @@ created: 2026-04-21
 
 # DESIGN 0002: JSM Webhook → SAMLMapping Provisioning — Phase 2
 
-**Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-21
+**Status:** Implemented **Author:** Donald Gifford **Date:** 2026-04-21
+
+> **Implementation note (2026-04-28):** The shipped CRD shape diverges from
+> this document in several places — `SAMLGroupMapping` (not `SAMLMapping`)
+> at `wiz.webhookd.io/v1alpha1` (not `wiz.example.com`), with a single
+> `roleRef` + multi-element `projectRefs` (not the original `team` +
+> `projects[]` shape). The canonical shapes live in
+> `docs/examples/samples/wiz_v1alpha1_*.yaml`; the local Go stub is at
+> `internal/webhook/wizapi/types.go`. IMPL-0002 §Resolved Decisions §2
+> documents the divergence and rationale. This DESIGN doc keeps its
+> original framing for historical fidelity; IMPL-0002 is the source of
+> truth for the actually-shipped shape.
 
 <!--toc:start-->
 - [Overview](#overview)

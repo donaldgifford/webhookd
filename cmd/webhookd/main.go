@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -26,8 +27,10 @@ import (
 
 	"github.com/donaldgifford/webhookd/internal/config"
 	"github.com/donaldgifford/webhookd/internal/httpx"
+	"github.com/donaldgifford/webhookd/internal/k8s"
 	"github.com/donaldgifford/webhookd/internal/observability"
 	"github.com/donaldgifford/webhookd/internal/webhook"
+	"github.com/donaldgifford/webhookd/internal/webhook/jsm"
 )
 
 // Build-time provenance, injected via
@@ -89,7 +92,15 @@ func run(ctx context.Context) error {
 
 	reg, metrics := observability.NewMetrics(cfg)
 
-	publicHandler := buildPublicHandler(cfg, logger, metrics)
+	var dispatcher http.Handler
+	if slices.Contains(cfg.EnabledProviders, "jsm") {
+		dispatcher, err = buildDispatcher(cfg, logger, metrics)
+		if err != nil {
+			return fmt.Errorf("dispatcher: %w", err)
+		}
+	}
+
+	publicHandler := buildPublicHandler(cfg, logger, metrics, dispatcher)
 
 	var ready atomic.Bool
 	adminHandler := httpx.NewAdminMux(logger, reg, metrics, &ready,
@@ -144,24 +155,24 @@ func shutdownTracerProvider(
 }
 
 // buildPublicHandler composes the public mux and middleware chain. The
-// middleware order matters; see internal/httpx for the rationale.
+// middleware order matters; see internal/httpx for the rationale. The
+// dispatcher (built once at startup) is mounted at the per-provider
+// route — the Phase 1 503 tombstone is gone now.
 func buildPublicHandler(
 	cfg *config.Config,
 	logger *slog.Logger,
 	metrics *observability.Metrics,
+	dispatcher http.Handler,
 ) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /webhook/{provider}", webhook.NewHandler(
-		webhook.HandlerConfig{
-			SigningSecret:   cfg.SigningSecret,
-			MaxBodyBytes:    cfg.MaxBodyBytes,
-			SignatureHeader: cfg.SignatureHeader,
-			TimestampHeader: cfg.TimestampHeader,
-			TimestampSkew:   cfg.TimestampSkew,
-		},
-		logger,
-		metrics,
-	))
+	if dispatcher == nil {
+		mux.HandleFunc("POST /webhook/{provider}", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Retry-After", "30")
+			http.Error(w, "webhook dispatcher disabled", http.StatusServiceUnavailable)
+		})
+	} else {
+		mux.Handle("POST /webhook/{provider}", dispatcher)
+	}
 	return httpx.Chain(
 		mux,
 		httpx.Recover(logger, metrics),
@@ -174,6 +185,50 @@ func buildPublicHandler(
 		httpx.SLog(logger),
 		httpx.Metrics(metrics),
 	)
+}
+
+// buildDispatcher constructs the JSM provider, the K8s executor, and
+// the dispatcher that ties them together. The caller gates this on
+// `WEBHOOK_PROVIDERS` containing "jsm" — when JSM is disabled the
+// public handler falls back to a 503 tombstone, useful for Phase 1
+// integration tests that don't want to stand up Kubernetes.
+func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observability.Metrics) (http.Handler, error) {
+	clients, err := k8s.NewClients(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("k8s clients: %w", err)
+	}
+
+	executor := webhook.NewExecutor(clients.CtrlClient, logger, metrics,
+		webhook.ExecutorConfig{
+			Namespace:    cfg.CR.Namespace,
+			FieldManager: cfg.CR.FieldManager,
+			SyncTimeout:  cfg.CR.SyncTimeout,
+		})
+
+	provider := jsm.New(&jsm.Config{
+		TriggerStatus:        cfg.JSM.TriggerStatus,
+		FieldProviderGroupID: cfg.JSM.FieldProviderGroupID,
+		FieldRole:            cfg.JSM.FieldRole,
+		FieldProject:         cfg.JSM.FieldProject,
+		IdentityProviderID:   cfg.CR.IdentityProviderID,
+		Signature: jsm.SignatureConfig{
+			SecretBytes: cfg.SigningSecret,
+			SigHeader:   cfg.SignatureHeader,
+			TSHeader:    cfg.TimestampHeader,
+			Skew:        cfg.TimestampSkew,
+		},
+		Metrics: metrics,
+	})
+
+	d := webhook.NewDispatcher(&webhook.DispatcherConfig{
+		Providers:       []webhook.Provider{provider},
+		ResponseBuilder: provider,
+		Executor:        executor,
+		Logger:          logger,
+		Metrics:         metrics,
+		MaxBodyBytes:    cfg.MaxBodyBytes,
+	})
+	return d, nil
 }
 
 // startServer dispatches a goroutine that runs srv.ListenAndServe and
