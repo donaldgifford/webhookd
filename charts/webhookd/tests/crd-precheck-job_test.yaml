@@ -4,6 +4,10 @@ templates:
 release:
   name: webhookd
   namespace: webhookd
+set:
+  jsm.crIdentityProviderID: ci-test-idp
+  signing.createSecret: true
+  signing.secret: ci-test-secret
 tests:
   - it: enabled by default — renders all four hook resources
     asserts:
@@ -68,12 +72,12 @@ tests:
           path: spec.template.spec.containers[0].command[2]
           pattern: "bar.example.com"
 
-  - it: empty crdPrecheck.required fails templating
+  - it: empty crdPrecheck.required is rejected by the values schema
     set:
       crdPrecheck.required: []
     asserts:
       - failedTemplate:
-          errorMessage: "crdPrecheck.required must list at least one CRD when crdPrecheck.enabled=true"
+          errorPattern: "crdPrecheck/required.*minItems"
 
   - it: crdPrecheck.image override is honored
     set:

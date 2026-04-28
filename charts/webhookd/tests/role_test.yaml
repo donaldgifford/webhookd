@@ -4,6 +4,10 @@ templates:
 release:
   name: webhookd
   namespace: webhookd
+set:
+  jsm.crIdentityProviderID: ci-test-idp
+  signing.createSecret: true
+  signing.secret: ci-test-secret
 tests:
   - it: lands in the rbac.targetNamespace, not the release namespace
     asserts:
@@ -49,9 +53,9 @@ tests:
             - watch
             - patch
 
-  - it: rbac.targetNamespace empty fails templating
+  - it: rbac.targetNamespace empty is rejected by the values schema
     set:
       rbac.targetNamespace: ""
     asserts:
       - failedTemplate:
-          errorMessage: "rbac.targetNamespace must be set"
+          errorPattern: "rbac/targetNamespace.*minLength"

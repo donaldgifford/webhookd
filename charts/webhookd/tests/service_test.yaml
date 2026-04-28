@@ -4,6 +4,10 @@ templates:
 release:
   name: webhookd
   namespace: webhookd
+set:
+  jsm.crIdentityProviderID: ci-test-idp
+  signing.createSecret: true
+  signing.secret: ci-test-secret
 tests:
   - it: defaults to ClusterIP with two named ports
     asserts:

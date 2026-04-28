@@ -97,12 +97,12 @@ tests:
             name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
             value: test-idp
 
-  - it: jsm.crIdentityProviderID empty + jsm.enabled=true fails templating
+  - it: jsm.crIdentityProviderID empty + jsm.enabled=true is rejected by the values schema
     set:
       jsm.crIdentityProviderID: ""
     asserts:
       - failedTemplate:
-          errorMessage: "jsm.crIdentityProviderID is required when jsm.enabled=true"
+          errorPattern: "jsm/crIdentityProviderID.*minLength"
 
   - it: signing.createSecret=true points secretKeyRef at chart-local Secret
     asserts:
@@ -127,14 +127,14 @@ tests:
           path: spec.template.spec.containers[0].env[?(@.name=="WEBHOOK_SIGNING_SECRET")].valueFrom.secretKeyRef.key
           value: hmac-key
 
-  - it: signing.createSecret=false + existingSecret empty fails templating
+  - it: signing.createSecret=false + existingSecret empty is rejected by the values schema
     set:
       signing.createSecret: false
       signing.secret: ""
       signing.existingSecret: ""
     asserts:
       - failedTemplate:
-          errorMessage: "signing.existingSecret must be set when signing.createSecret=false"
+          errorPattern: "signing.*oneOf.*failed"
 
   - it: applies podSecurityContext defaults
     asserts:

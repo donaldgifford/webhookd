@@ -148,9 +148,9 @@ chart-tools: ## Install helm plugins not managed by mise (helm-unittest)
 		|| helm plugin install https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION)
 	@echo "✓ helm-unittest plugin installed (version $(HELM_UNITTEST_VERSION))"
 
-helm-lint: ## Lint the webhookd Helm chart with `helm lint`
+helm-lint: ## Lint the webhookd Helm chart with `helm lint` against ci-values.yaml
 	@ $(MAKE) --no-print-directory log-$@
-	@helm lint $(CHART_DIR)
+	@helm lint $(CHART_DIR) -f $(CHART_DIR)/ci/ci-values.yaml
 
 helm-template: ## Render the chart with default values
 	@ $(MAKE) --no-print-directory log-$@

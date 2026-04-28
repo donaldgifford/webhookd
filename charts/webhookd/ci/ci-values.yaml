@@ -1,5 +1,10 @@
-# Placeholder ci-values.yaml — populated in Phase 4 of IMPL-0003.
-# `chart-testing` reads every `ci/*-values.yaml` file and runs `ct install`
-# once per file. Empty placeholder lets `ct list-changed` succeed during
-# Phase 0 even though no install path is exercised yet.
-{}
+# Minimal-valid override set — satisfies values.schema.json and exercises
+# the default install path. `make helm-lint` and `chart-testing` both
+# consume this file.
+jsm:
+  crIdentityProviderID: ci-test-idp
+signing:
+  createSecret: true
+  secret: ci-test-secret
+rbac:
+  targetNamespace: ct-target
