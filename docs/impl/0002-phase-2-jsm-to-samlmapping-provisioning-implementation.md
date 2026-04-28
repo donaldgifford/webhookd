@@ -399,9 +399,8 @@ middleware.
         client.FieldOwner(cfg.FieldManager), client.ForceOwnership)`.
   - [x] After Patch returns, refetch via `client.Get` so we have the
         current `metadata.generation`.
-  - [ ] Span attributes (`k8s.apply` span with `k8s.resource.*` and
-        `webhookd.outcome`) — deferred to Phase 7 (Observability
-        Additions); the executor stays observability-agnostic for now.
+  - [x] Span attributes (`k8s.apply` span with `k8s.resource.*` and
+        `webhookd.outcome`) — landed in Phase 7.
 - [x] Implement `crName(issueKey string) string`:
   - [x] Lowercase, replace any non-`[a-z0-9-]` with `-`,
         prefix with `jsm-`.
@@ -641,10 +640,11 @@ shape goes back to JSM.
   - [x] Asserts 200 + `status: "success"` + `crName: "jsm-sec-9001"`.
   - [x] `goleak.Find` runs after envtest.Stop with IgnoreTopFunction
         for envtest's transport-pool / wait-loop residuals.
-  - [ ] Metric assertions on `webhookd_k8s_apply_total` /
-        `webhookd_k8s_sync_duration_seconds` — deferred to Phase 7
-        (the metrics themselves haven't shipped yet; they land in
-        Phase 7 alongside the trace-id ADR).
+  - [x] Metric assertions on `webhookd_k8s_apply_total{outcome=created}`,
+        `webhookd_k8s_sync_duration_seconds{outcome=ready}`, and
+        `webhookd_jsm_response_total{status_code=200}` — backfilled
+        after Phase 7 shipped the metrics. The e2e test scrapes
+        `/metrics` and asserts each labeled line is present.
 
 #### Success Criteria
 
@@ -711,9 +711,9 @@ propagation contract for the operator team.
       webhookd's exit span and the operator's reconcile entry — link
       semantics are honest), `.status.observability.traceId` (status
       is operator's namespace), and a sidecar lookup API (overkill).
-- [ ] README §Observability paragraph + Phase 2 metric table —
-      deferred to Phase 8 when DESIGN-0002 status flips to
-      Implemented and the README is rewritten end-to-end.
+- [x] README §Observability paragraph + Phase 2 metric table —
+      landed in Phase 8 (`README.md` Observability section now lists
+      all five new metrics with their label cardinality).
 
 #### Success Criteria
 

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -301,6 +302,42 @@ func TestRun_EndToEnd_JSMToReadyCR(t *testing.T) {
 	if parsed["crName"] != crName {
 		t.Errorf("crName = %v, want %s\nbody: %s", parsed["crName"], crName, respBody)
 	}
+
+	// Scrape the admin /metrics endpoint and assert the Phase 2
+	// metrics observed at least one event each. We grep for the metric
+	// name + the labeled outcome we expect — the goal is "the wiring
+	// is alive end-to-end," not a precise count comparison (timing
+	// against envtest is jittery).
+	metricsBody := scrapeMetrics(ctx, t, "http://127.0.0.1:19092/metrics")
+	for _, want := range []string{
+		`webhookd_k8s_apply_total{kind="SAMLGroupMapping",outcome="created"} 1`,
+		`webhookd_k8s_sync_duration_seconds_count{kind="SAMLGroupMapping",outcome="ready"} 1`,
+		`webhookd_jsm_response_total{status_code="200"} 1`,
+	} {
+		if !strings.Contains(metricsBody, want) {
+			t.Errorf("metric line missing from scrape: %q", want)
+		}
+	}
+}
+
+// scrapeMetrics fetches the admin /metrics body so the e2e test can
+// assert that Phase 2 metric pipelines fired end-to-end.
+func scrapeMetrics(ctx context.Context, t *testing.T, url string) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("metrics request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("scrape metrics: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read metrics body: %v", err)
+	}
+	return string(body)
 }
 
 // markCRReady polls envtest for the CR webhookd is about to apply,
