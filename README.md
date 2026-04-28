@@ -208,20 +208,51 @@ comment so SREs investigating failures pivot directly into Tempo.
 
 ## Deployment
 
-webhookd ships as a single static binary plus three small Kubernetes
-manifests for RBAC. The canonical CRDs live with the operator
-(`github.com/donaldgifford/wiz-operator`) — webhookd's `deploy/crds/`
-fixtures are minimal envtest schemas, not deployable definitions.
+webhookd ships as a versioned Helm chart at
+[`charts/webhookd`](charts/webhookd/README.md). Two distribution
+channels — pick whichever matches your cluster's tooling:
+
+### OCI registry (recommended)
 
 ```bash
-# Apply RBAC: ServiceAccount in `webhookd` ns, Role + RoleBinding in
-# `wiz-operator` ns granting get/list/watch/patch on samlgroupmappings.
-kubectl apply -k deploy/rbac/
+helm install webhookd \
+  oci://ghcr.io/donaldgifford/charts/webhookd \
+  --version 0.1.0 \
+  --namespace webhookd \
+  --create-namespace \
+  --set jsm.crIdentityProviderID=YOUR_IDP_ID \
+  --set signing.createSecret=true \
+  --set signing.secret=$(openssl rand -hex 32)
 ```
 
-The Phase 2 environment variables in the table below configure JSM custom
-fields, the operator namespace, the sync budget, and the static identity
-provider id stamped onto every CR.
+### Classic Helm repository (gh-pages)
+
+```bash
+helm repo add webhookd https://donaldgifford.github.io/webhookd
+helm repo update
+helm install webhookd webhookd/webhookd \
+  --version 0.1.0 \
+  --namespace webhookd \
+  --create-namespace \
+  -f your-values.yaml
+```
+
+Both channels publish the same `.tgz` from
+[`.github/workflows/chart-release.yml`](.github/workflows/chart-release.yml);
+neither is authoritative. The chart writes the Role + RoleBinding
+into `rbac.targetNamespace` (default `wiz-operator`) so the
+release namespace can stay separate from where the CRs land. See
+[`charts/webhookd/README.md`](charts/webhookd/README.md) for the full
+values reference and multi-instance install pattern. See
+[DESIGN-0003](docs/design/0003-helm-chart-and-release-pipeline-for-webhookd.md)
+and [IMPL-0003](docs/impl/0003-helm-chart-and-release-pipeline-implementation.md)
+for the design.
+
+### Raw manifests (envtest fixtures only)
+
+The YAML under [`deploy/rbac/`](deploy/rbac/) is **not** the
+production install path — it's the fixture set the integration tests
+load directly. Use the chart for any cluster you actually deploy to.
 
 ## Observability
 

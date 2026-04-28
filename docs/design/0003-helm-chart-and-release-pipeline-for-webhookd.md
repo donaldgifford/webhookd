@@ -1,7 +1,7 @@
 ---
 id: DESIGN-0003
 title: "Helm Chart and Release Pipeline for webhookd"
-status: In Review
+status: Implemented
 author: Donald Gifford
 created: 2026-04-28
 ---
@@ -9,7 +9,7 @@ created: 2026-04-28
 
 # DESIGN 0003: Helm Chart and Release Pipeline for webhookd
 
-**Status:** In Review
+**Status:** Implemented
 **Author:** Donald Gifford
 **Date:** 2026-04-28
 

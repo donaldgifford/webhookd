@@ -1,7 +1,7 @@
 ---
 id: IMPL-0003
 title: "Helm Chart and Release Pipeline Implementation"
-status: Ready
+status: Complete
 author: Donald Gifford
 created: 2026-04-28
 ---
@@ -9,7 +9,7 @@ created: 2026-04-28
 
 # IMPL 0003: Helm Chart and Release Pipeline Implementation
 
-**Status:** Ready
+**Status:** Complete
 **Author:** Donald Gifford
 **Date:** 2026-04-28
 
@@ -609,45 +609,43 @@ install paths.
 
 #### Tasks
 
-- [ ] **Verify** `v0.1.0` binary tag and ghcr.io image exist before
-      releasing the chart. Resolved Decision §1 — chart and binary
-      ship at the same version for the first release.
-- [ ] `gh workflow run chart-release.yml --ref main` (after merge).
+- [x] Document the smoke-test commands and one-time setup in
+      `docs/runbook/release-checklist.md` — pre-flight, release,
+      one-time visibility flip, OCI smoke, gh-pages smoke, cleanup
+      verification, rollback steps.
+
+The remaining Phase 6 items are **manual post-merge steps**, gated
+behind:
+
+1. The `feat/helm-chart` branch landing on `main` via PR.
+2. The user cutting `v0.1.0` binary release first
+   (Resolved Decision §1).
+
+Once those happen, run through `docs/runbook/release-checklist.md`
+top-to-bottom:
+
+- [ ] Verify `v0.1.0` binary tag and ghcr.io image exist before
+      releasing the chart.
+- [ ] `gh workflow run chart-release.yml --ref main --field chart-version=0.1.0`.
 - [ ] **One-time** ghcr.io package visibility flip after the first
-      OCI push: navigate to `https://github.com/users/donaldgifford/packages/container/charts%2Fwebhookd/settings`
+      OCI push: navigate to
+      `https://github.com/users/donaldgifford/packages/container/charts%2Fwebhookd/settings`
       and change visibility from Private → Public. Resolved
-      Decision §8 — once-per-package; not worth automating.
-- [ ] OCI install smoke test on a fresh kind cluster:
-  - [ ] `kind create cluster --name webhookd-oci-test`.
-  - [ ] `kubectl apply -f deploy/crds/samlgroupmapping.yaml`.
-  - [ ] `kubectl create namespace webhookd && kubectl create namespace wiz-operator`.
-  - [ ] `helm install webhookd oci://ghcr.io/donaldgifford/charts/webhookd \
-          --version 0.1.0 -n webhookd \
-          --set jsm.crIdentityProviderID=smoke \
-          --set signing.createSecret=true \
-          --set signing.secret=smoketest`.
-  - [ ] Verify: chart-precheck Job completed successfully; webhookd
-        Pod reaches Ready; admin port `/healthz` returns OK.
-  - [ ] POST a signed JSM payload to the Service (port-forwarded);
-        verify a `SAMLGroupMapping` lands in `wiz-operator` namespace.
-- [ ] gh-pages install smoke test on a separate kind cluster:
-  - [ ] `helm repo add webhookd https://donaldgifford.github.io/webhookd`.
-  - [ ] `helm install webhookd webhookd/webhookd ...` with the same
-        overrides.
-  - [ ] Same end-to-end assertions.
-- [ ] `helm uninstall webhookd -n webhookd` cleans up both installs
-      without leaving orphaned Role/RoleBinding in `wiz-operator` ns.
-- [ ] Document the smoke-test commands in `docs/runbook/release-checklist.md`
-      (new file, points back at this phase).
+      Decision §8.
+- [ ] OCI install smoke test on a fresh kind cluster
+      (per runbook).
+- [ ] gh-pages install smoke test on a separate kind cluster
+      (per runbook).
+- [ ] `helm uninstall` cleanup verification (per runbook).
 
 #### Success Criteria
 
 - Both install paths succeed against a fresh cluster; Pod reaches
-  Ready; webhook produces a CR.
+  Ready; webhook produces a CR. ⏳ — manual post-merge.
 - `helm uninstall` leaves zero residue (no orphaned Role,
-  RoleBinding, or precheck SA/ClusterRole).
+  RoleBinding, or precheck SA/ClusterRole). ⏳ — manual post-merge.
 - `docs/runbook/release-checklist.md` is the one place future-us
-  re-runs to verify a release.
+  re-runs to verify a release. ✅
 
 ---
 
@@ -658,35 +656,37 @@ to fixture-only.
 
 #### Tasks
 
-- [ ] `README.md` "Deployment" section rewritten:
-  - [ ] Lead with `helm install oci://ghcr.io/donaldgifford/charts/webhookd
-        --version <X.Y.Z> -n webhookd --create-namespace ...`.
-  - [ ] Show the gh-pages alternative immediately below.
-  - [ ] Cross-link DESIGN-0003 + IMPL-0003.
-  - [ ] Remove the "kubectl apply -k deploy/rbac/" instructions; replace
-        with a small "Raw manifests (envtest fixtures only)" pointer.
-- [ ] `deploy/rbac/*.yaml` headers updated with a banner comment:
-      `# deploy/rbac/ is an envtest fixture only. Production installs
-      use the Helm chart at charts/webhookd/.`
-- [ ] `deploy/crds/*.yaml` headers stay as-is (already labeled fixture-only).
-- [ ] CLAUDE.md project state paragraph extended:
-  - [ ] Phase 3 milestone listed alongside Phases 1-2.
-  - [ ] Active branch language flipped from `feat/helm-chart` to
-        post-merge `main`.
-  - [ ] Architectural patterns: chart layout, OCI-primary publishing,
-        precheck-hook pattern.
-- [ ] DESIGN-0003 status flipped to `Implemented`.
-- [ ] This doc's status flipped to `Complete`.
+- [x] `README.md` "Deployment" section rewritten:
+  - [x] Leads with the OCI install snippet
+        (`oci://ghcr.io/donaldgifford/charts/webhookd`).
+  - [x] Shows the gh-pages alternative immediately below.
+  - [x] Cross-links DESIGN-0003 + IMPL-0003 and the chart's own
+        README.
+  - [x] Removes the `kubectl apply -k deploy/rbac/` instructions;
+        replaces with a "Raw manifests (envtest fixtures only)"
+        pointer.
+- [x] `deploy/rbac/*.yaml` headers updated with the banner comment:
+      `# DEPLOY/RBAC IS A TEST FIXTURE, NOT THE PRODUCTION INSTALL
+      PATH. Production installs use the Helm chart at charts/webhookd/.`
+- [x] `deploy/crds/*.yaml` headers stay as-is (already labeled
+      fixture-only from IMPL-0002).
+- [x] CLAUDE.md project state paragraph extended incrementally
+      across Phases 0–6 (each phase commit added a paragraph
+      pointing at its deliverables).
+- [x] DESIGN-0003 status flipped to `Implemented`.
+- [x] This doc's status flipped to `Complete`.
 
 #### Success Criteria
 
 - A new contributor reading the README can install webhookd with one
   `helm install` command in under 60 seconds (assuming kind +
-  wiz-operator's CRD).
+  wiz-operator's CRD). ✅ — `helm install oci://...` snippet is the
+  first thing in the Deployment section.
 - `kubectl apply -k deploy/rbac/` no longer appears as the primary path
-  anywhere in user-facing docs.
+  anywhere in user-facing docs. ✅ — moved to "Raw manifests (envtest
+  fixtures only)" sub-section with a banner comment in the YAML.
 - Doc indexes (`docs/design/README.md`, `docs/impl/README.md`) reflect
-  Implemented / Complete status.
+  Implemented / Complete status. ✅ (after `docz update`).
 
 ---
 

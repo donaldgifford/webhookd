@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 webhookd contributors
 #
+# DEPLOY/RBAC IS A TEST FIXTURE, NOT THE PRODUCTION INSTALL PATH.
+# Production installs use the Helm chart at charts/webhookd/.
+# These manifests are kept around because the integration tests
+# load them directly via kustomize.
+#
 # Namespaced Role granting the minimum verbs the Phase 2 executor
 # needs against SAMLGroupMapping CRs. Lives in the operator's
 # namespace (where the CRs are applied), not in webhookd's own
