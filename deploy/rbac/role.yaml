@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 webhookd contributors
+#
+# Namespaced Role granting the minimum verbs the Phase 2 executor
+# needs against SAMLGroupMapping CRs. Lives in the operator's
+# namespace (where the CRs are applied), not in webhookd's own
+# namespace — the SA reaches across via the RoleBinding.
+#
+# Verbs:
+#   - patch: required for Server-Side Apply (the executor uses
+#     client.Patch with client.Apply + client.ForceOwnership).
+#   - get: required for the post-apply refetch that captures
+#     metadata.generation, and for the initial Get in waitForSync.
+#   - list, watch: required by the namespace-scoped Watch in
+#     waitForSync. We don't filter server-side by name (CRDs need
+#     selectableFields for that since K8s 1.30); per-event filtering
+#     happens client-side.
+#
+# Notably absent: `create`, `delete`, `update`. SSA's Patch covers
+# both create-on-absent and update; we never tear CRs down from
+# webhookd. The operator owns the CR lifecycle past apply.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: webhookd
+  namespace: wiz-operator
+rules:
+  - apiGroups: ["wiz.webhookd.io"]
+    resources: ["samlgroupmappings"]
+    verbs: ["get", "list", "watch", "patch"]

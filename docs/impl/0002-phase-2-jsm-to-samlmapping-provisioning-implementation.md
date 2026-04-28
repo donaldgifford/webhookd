@@ -1,7 +1,7 @@
 ---
 id: IMPL-0002
 title: "Phase 2 JSM to SAMLGroupMapping Provisioning Implementation"
-status: Draft
+status: Complete
 author: Donald Gifford
 created: 2026-04-27
 ---
@@ -9,7 +9,7 @@ created: 2026-04-27
 
 # IMPL 0002: Phase 2 JSM to SAMLGroupMapping Provisioning Implementation
 
-**Status:** Draft
+**Status:** Complete
 **Author:** Donald Gifford
 **Date:** 2026-04-27
 
@@ -735,43 +735,35 @@ README updates that turn this from "code merged" into "shippable."
 
 #### Tasks
 
-- [ ] Create `deploy/rbac/role.yaml` (Namespaced Role in
-      `wiz-operator` namespace) with verbs `get`, `list`, `watch`,
-      `patch` on `wiz.webhookd.io/samlgroupmappings`. (No verbs on
-      `projects` or `userroles` for Phase 2 — pre-validation
-      middleware in a future phase will add `get` on those.)
-- [ ] Create `deploy/rbac/rolebinding.yaml` binding the Role to the
-      `webhookd` ServiceAccount in the webhookd namespace.
-- [ ] Create `deploy/rbac/serviceaccount.yaml` for completeness.
-- [ ] Add `deploy/crds/` *fixtures* (used by envtest) carrying the
-      minimal CRD definitions that match the Go types: one each for
-      `samlgroupmapping.yaml`, `project.yaml`, `userrole.yaml`. All
-      clearly labeled `# fixture only; canonical CRDs ship with the
-      operator project`. The Phase 8 sample YAMLs in
-      `docs/examples/samples/` are user-facing references; the
-      `deploy/crds/` fixtures are envtest-only (minimal schemas,
-      validate the Go types load).
-- [ ] Update `README.md`:
-  - [ ] Status line: Phase 2 is now Implemented (when this lands).
-  - [ ] Add a §"JSM provider" subsection documenting how the
-        webhook is configured on the JSM side, what the response
-        body looks like, and the failure-mode → JSM behavior table.
-  - [ ] Add a §"Deployment" subsection pointing at `deploy/rbac/`
-        and listing the Phase 2 env vars.
-- [ ] Update `CLAUDE.md`:
-  - [ ] Project-state paragraph: Phase 2 implemented.
-  - [ ] Architectural patterns: capture the
-        "Provider parses → Executor side-effects" split as a
-        durable pattern future providers must follow.
-  - [ ] Testing patterns: record any new gotchas surfaced by
-        envtest (CRD install ordering, etcd cleanup, anything
-        else).
-- [ ] Flip `docs/design/0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md`
-      status to `Implemented` once Phase 6's integration test
-      lands. Run `docz update` to refresh indexes.
-- [ ] Flip this doc's `status:` to `Complete` and update the
-      Resolved Decisions section (mirror IMPL-0001's pattern) with
-      the answers to the Open Questions below.
+- [x] `deploy/rbac/role.yaml` — Namespaced Role in `wiz-operator`
+      with `get/list/watch/patch` on
+      `wiz.webhookd.io/samlgroupmappings`. No verbs on `projects` or
+      `userroles` for Phase 2; future ref-validation middleware adds
+      `get` on those.
+- [x] `deploy/rbac/rolebinding.yaml` binds the Role to the `webhookd`
+      ServiceAccount across namespaces.
+- [x] `deploy/rbac/serviceaccount.yaml`.
+- [x] `deploy/rbac/kustomization.yaml` so `kubectl apply -k deploy/rbac/`
+      works.
+- [x] `deploy/crds/{samlgroupmapping,project,userrole}.yaml` envtest
+      fixtures, all labeled `# fixture only; canonical CRD ships with
+      the operator project`.
+- [x] `README.md`:
+  - [x] Status line flipped: Phase 2 implemented end-to-end.
+  - [x] §"JSM provider" subsection documenting webhook configuration
+        on the JSM side, response body shape, and failure-mode → JSM
+        behavior table.
+  - [x] §"Deployment" subsection pointing at `deploy/rbac/`.
+  - [x] §"Observability" updated with the five new metrics.
+  - [x] Response code table updated (200 success/noop, 422
+        unprocessable, 504 timeout — all new for Phase 2).
+- [x] `CLAUDE.md` updated phase-by-phase across Phases 0–7;
+      architectural patterns capture the provider-parses /
+      executor-side-effects split, single-typed-client refactor,
+      WatchListClient gotcha, kubeconfig materialization for envtest.
+- [x] DESIGN-0002 status flipped to `Implemented` with an
+      implementation note pointing at the actually-shipped CRD shape.
+- [x] This doc's status flipped to `Complete`.
 
 #### Success Criteria
 
