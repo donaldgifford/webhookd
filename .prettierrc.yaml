@@ -20,7 +20,21 @@ overrides:
   - files: "*.md"
     # https://prettier.io/docs/en/options
     options:
-      # "always" - Wrap prose if it exceeds the print width.
+      # "always" - Wrap prose if it exceeds the print width. CAVEAT: in
+      #            prettier 3.x this collapses GitHub Flavored Markdown alert
+      #            callouts (`> [!WARNING]\n> body` becomes
+      #            `> [!WARNING] body`), which breaks rendering on GitHub.
+      #            Workaround: prefix each callout with `<!-- prettier-ignore -->`
+      #            on the line above. Example:
+      #
+      #              <!-- prettier-ignore -->
+      #              > [!WARNING]
+      #              > some warning about stuff
+      #
+      #            Upstream tracking: https://github.com/prettier/prettier/issues/15479.
+      #            The remark-parse → micromark v4 parser swap queued for
+      #            prettier 4.0 should fix this; retest "always" on a callout
+      #            after upgrading and remove the workaround if it survives.
       # "never" - Un-wrap each block of prose into one line.
       # "preserve" - DEFAULT - Do nothing, leave prose as-is. First availi in v1.9.0
       proseWrap: "always"
