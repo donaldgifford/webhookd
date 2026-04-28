@@ -1,0 +1,25 @@
+# Patterns excluded from `helm package`.
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.project
+.idea/
+*.tmproj
+.vscode/
+
+# Chart-local development artifacts
+ci/
+tests/
+.helmignore
+README.md.gotmpl
+CHANGELOG.md

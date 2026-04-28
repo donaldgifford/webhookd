@@ -128,23 +128,24 @@ Nothing renders yet — this phase is purely structural.
       (helm-unittest is shipped as a helm plugin, not as a standalone
       binary — same approach repo-guardian uses). Idempotent: re-runs
       no-op once installed.
-- [ ] Create `charts/webhookd/` directory.
-- [ ] `charts/webhookd/.helmignore` (standard exclusions: `.git`,
+- [x] Create `charts/webhookd/` directory.
+- [x] `charts/webhookd/.helmignore` (standard exclusions: `.git`,
       `.github`, `*.md` outside chart, etc.).
 - [ ] **Pre-Phase-0 prerequisite:** cut a `v0.1.0` binary release
       (`gh workflow run release.yml --ref main` after tagging) so the
       chart's `appVersion: 0.1.0` matches a real published image.
       Resolved Decision §1 — chart and binary versions stay aligned
-      for the first release.
-- [ ] `charts/webhookd/Chart.yaml` with `apiVersion: v2`, `name: webhookd`,
+      for the first release. **Status:** chart pins `appVersion: 0.1.0`
+      ahead of the binary tag; user owns the release-time tag cut.
+- [x] `charts/webhookd/Chart.yaml` with `apiVersion: v2`, `name: webhookd`,
       description, `type: application`, `version: 0.1.0`,
       `appVersion: 0.1.0` (matches the freshly-cut binary tag),
       `kubeVersion: ">=1.30.0"`, maintainers, sources, keywords,
-      icon URL.
-- [ ] `charts/webhookd/CHANGELOG.md` with a `## 0.1.0 - YYYY-MM-DD`
+      icon URL, plus ArtifactHub annotations.
+- [x] `charts/webhookd/CHANGELOG.md` with a `## 0.1.0 - 2026-04-28`
       entry seeded from this initial release. Resolved Decision §11 —
       hand-curated per-chart changelog drives release-notes content.
-- [ ] `charts/webhookd/values.yaml` skeleton with **all** the value
+- [x] `charts/webhookd/values.yaml` skeleton with **all** the value
       blocks from DESIGN-0003 §Values schema: `image`, `replicaCount`,
       `podSecurityContext`, `securityContext`, `resources`,
       `livenessProbe`, `readinessProbe`, `service`, `serviceAccount`,
@@ -154,41 +155,52 @@ Nothing renders yet — this phase is purely structural.
       `imagePullSecrets`, `podAnnotations`, `podLabels`,
       `nameOverride`, `fullnameOverride`. With helm-docs `# --` comments
       on every leaf so Phase 3's README generation works incrementally.
-- [ ] `charts/webhookd/templates/_helpers.tpl` with named templates:
-  - [ ] `webhookd.name`
-  - [ ] `webhookd.fullname`
-  - [ ] `webhookd.chart`
-  - [ ] `webhookd.labels`
-  - [ ] `webhookd.selectorLabels`
-  - [ ] `webhookd.serviceAccountName`
-  - [ ] `webhookd.targetNamespace`
-  - [ ] `webhookd.enabledProviders` (comma-joined list of provider
+- [x] `charts/webhookd/templates/_helpers.tpl` with named templates:
+  - [x] `webhookd.name`
+  - [x] `webhookd.fullname`
+  - [x] `webhookd.chart`
+  - [x] `webhookd.labels`
+  - [x] `webhookd.selectorLabels`
+  - [x] `webhookd.serviceAccountName`
+  - [x] `webhookd.targetNamespace`
+  - [x] `webhookd.enabledProviders` (comma-joined list of provider
         names whose `enabled=true`; today just `jsm`).
-- [ ] `charts/webhookd/templates/NOTES.txt` skeleton (URLs, signing-
-      header reminder, JSM-side webhook URL guidance, link to
-      `internal/webhook/jsm` README).
-- [ ] `ct.yaml` at repo root (mirrors repo-guardian: `chart-dirs:
+  - [x] `webhookd.signingSecretName` / `webhookd.signingSecretKey`
+        (helpers added during Phase 0 to keep deployment.yaml DRY in
+        Phase 1).
+- [x] `charts/webhookd/templates/NOTES.txt` skeleton (URLs, signing-
+      header reminder, JSM-side webhook URL guidance, link to chart
+      README).
+- [x] `ct.yaml` at repo root (mirrors repo-guardian: `chart-dirs:
       [charts]`, `target-branch: main`, `check-version-increment: false`,
-      `validate-maintainers: false`, `lint-conf: charts/.yamllint.yml`).
-- [ ] `charts/.yamllint.yml` with the relaxations `ct lint` needs
+      `validate-maintainers: false`, `validate-chart-schema: false`,
+      `lint-conf: charts/.yamllint.yml`).
+- [x] `charts/.yamllint.yml` with the relaxations `ct lint` needs
       (line-length disabled, `truthy: warning`).
-- [ ] `charts/webhookd/ci/ci-values.yaml` empty placeholder (Phase 4
+- [x] `charts/webhookd/ci/ci-values.yaml` empty placeholder (Phase 4
       fills it).
-- [ ] Update `Makefile` with `make chart-lint`, `make chart-test`,
-      `make chart-docs` targets that wrap the helm tooling.
-- [ ] Update CLAUDE.md with the chart layout note + `make chart-*`
+- [x] Update `Makefile` with `make helm-lint`, `make helm-test`,
+      `make helm-unittest`, `make helm-ct-lint`, `make helm-ct-install`,
+      `make helm-docs`, `make helm-docs-check`, `make helm-template`,
+      `make helm-package`, `make helm-push` targets (mirrors
+      repo-guardian's `helm-*` naming convention; supersedes the
+      original `chart-*` draft naming).
+- [x] Update CLAUDE.md with the chart layout note + `make helm-*`
       target list.
 
 #### Success Criteria
 
-- `helm lint charts/webhookd` runs cleanly (warnings allowed since
-  no templates yet, but `Error` count = 0).
-- `helm template charts/webhookd` renders nothing (only `NOTES.txt`
-  is non-empty), no parse errors.
+- `make helm-lint` (`helm lint charts/webhookd`) runs cleanly
+  (warnings allowed since no templates yet, but `Error` count = 0).
+  ✅ — `1 chart(s) linted, 0 chart(s) failed`.
+- `helm template charts/webhookd` renders nothing — `NOTES.txt` only
+  renders on install, not via `helm template`. ✅ — empty render.
 - `mise install` materializes all the new tools without manual steps.
-- `make chart-lint` is wired (passes trivially since no templates).
+  ✅
+- `make helm-test` (lint + helm-unittest) is wired and `make helm-docs`
+  generates a default README. ✅
 - `git status` shows only the expected new files; no test-related
-  changes leaking in.
+  changes leaking in. ✅
 
 ---
 

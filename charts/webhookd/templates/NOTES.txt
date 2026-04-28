@@ -1,0 +1,70 @@
+Thank you for installing {{ .Chart.Name }} (v{{ .Chart.Version }} / app v{{ .Chart.AppVersion }}).
+
+webhookd is now running in namespace {{ .Release.Namespace }}.
+
+================================================================================
+Quick reference
+================================================================================
+
+* Check pod readiness:
+    kubectl get pods -l "app.kubernetes.io/instance={{ .Release.Name }}" \
+      -n {{ .Release.Namespace }}
+
+* Tail logs:
+    kubectl logs -n {{ .Release.Namespace }} \
+      -l "app.kubernetes.io/instance={{ .Release.Name }}" -f
+
+* Port-forward the webhook listener (testing only):
+    kubectl port-forward -n {{ .Release.Namespace }} \
+      svc/{{ include "webhookd.fullname" . }} 8080:{{ .Values.service.webhookPort }}
+
+* Port-forward the admin listener (metrics + probes):
+    kubectl port-forward -n {{ .Release.Namespace }} \
+      svc/{{ include "webhookd.fullname" . }} 9090:{{ .Values.service.adminPort }}
+
+================================================================================
+Configuration
+================================================================================
+
+{{- if .Values.signing.createSecret }}
+* The signing key was rendered into Secret
+  `{{ printf "%s-signing" (include "webhookd.fullname" .) }}`. Update it via
+  `helm upgrade` or move to `signing.existingSecret` when you adopt an
+  external secret manager.
+{{- else }}
+* webhookd reads the HMAC signing key from Secret `{{ .Values.signing.existingSecret }}`,
+  key `{{ default "webhookSecret" .Values.signing.existingSecretKey }}`.
+  Make sure the Secret exists in namespace {{ .Release.Namespace }} before
+  the webhookd Pod starts.
+{{- end }}
+
+{{- if .Values.jsm.enabled }}
+* JSM provider is enabled. Configure your Jira Service Management automation to
+  POST to:
+
+    https://<your-ingress-host>/webhook/jsm
+
+  with header:
+
+    X-Webhook-Signature: sha256=<hmac-sha256(body, signingKey)>
+
+  and a JSON body matching the JSM webhook payload contract documented in
+  internal/webhook/jsm/README.md (or the project README).
+
+  CRs are written to namespace `{{ default .Values.rbac.targetNamespace .Values.jsm.crNamespace }}`
+  with `spec.identityProviderID = {{ .Values.jsm.crIdentityProviderID | default "<UNSET — required>" }}`.
+{{- end }}
+
+{{- if .Values.metrics.serviceMonitor.enabled }}
+* A Prometheus Operator ServiceMonitor was rendered. Confirm it is selected
+  by your Prometheus instance:
+
+    kubectl get servicemonitor -n {{ .Release.Namespace }} \
+      -l "app.kubernetes.io/instance={{ .Release.Name }}"
+{{- else }}
+* Prometheus metrics are exposed on the admin listener at `/metrics`. Set
+  `metrics.serviceMonitor.enabled=true` to render a ServiceMonitor for
+  Prometheus Operator deployments.
+{{- end }}
+
+For more, see https://github.com/donaldgifford/webhookd/blob/main/charts/webhookd/README.md

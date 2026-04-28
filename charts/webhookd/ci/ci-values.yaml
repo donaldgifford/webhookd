@@ -1,0 +1,5 @@
+# Placeholder ci-values.yaml — populated in Phase 4 of IMPL-0003.
+# `chart-testing` reads every `ci/*-values.yaml` file and runs `ct install`
+# once per file. Empty placeholder lets `ct list-changed` succeed during
+# Phase 0 even though no install path is exercised yet.
+{}
