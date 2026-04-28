@@ -322,33 +322,36 @@ is pure parser).
 
 #### Tasks
 
-- [ ] Create `internal/k8s/scheme.go`:
-  - [ ] Package-level `Scheme = runtime.NewScheme()`.
-  - [ ] `init()` (or explicit `RegisterTypes()`) calling
-        `clientgoscheme.AddToScheme(Scheme)` and
-        `wizapi.AddToScheme(Scheme)`.
-- [ ] Create `internal/k8s/client.go`:
-  - [ ] `NewClient(cfg *config.Config) (client.Client, error)`:
-    - [ ] If `cfg.Kubeconfig != ""` → `clientcmd.BuildConfigFromFlags`.
-    - [ ] Else → `ctrl.GetConfig()` (honors in-cluster +
-          `KUBECONFIG` host env).
-    - [ ] `client.New(restConfig, client.Options{Scheme: k8s.Scheme})`.
-  - [ ] Wrap connection errors with `fmt.Errorf("k8s config: %w", err)`
-        / `"k8s client: %w"` for the typed-error paths.
-- [ ] Create `internal/k8s/clientset.go` (thin wrapper):
-  - [ ] Expose a `*kubernetes.Clientset` *alongside* the
-        controller-runtime client. Reason: `watch.UntilWithSync` needs a
-        `cache.ListWatch`, and the easiest stable way to get one for a
-        typed CRD is via the dynamic informer factory. (See Open
-        Questions §6 for an alternative — `client.Watch` directly on
-        the controller-runtime client.)
-- [ ] Tests in `internal/k8s/client_test.go`:
-  - [ ] `NewClient` with a non-existent kubeconfig path → wrapped
-        error.
-  - [ ] Scheme registration: `Scheme.Recognizes(SAMLGroupMapping GVK) ==
-        true`.
-  - [ ] Skip the live-cluster smoke test in unit tests; envtest in
-        Phase 4 covers that path.
+- [x] Create `internal/k8s/scheme.go`:
+  - [x] Package-level `Scheme = runtime.NewScheme()`.
+  - [x] `init()` calling `clientgoscheme.AddToScheme(Scheme)` and
+        `wizapi.AddToScheme(Scheme)` via `utilruntime.Must`.
+- [x] Create `internal/k8s/client.go`:
+  - [x] `NewClients(cfg *config.Config) (*Clients, error)` returns a
+        `Clients{CtrlClient, Clientset, RESTConfig}` value combining
+        both flavors built from one `*rest.Config`.
+  - [x] If `cfg.Kubeconfig != ""` → `clientcmd.BuildConfigFromFlags`.
+  - [x] Else → `ctrl.GetConfig()` (honors in-cluster + `KUBECONFIG`
+        host env).
+  - [x] `client.New(restConfig, client.Options{Scheme: k8s.Scheme})`.
+  - [x] Wrap connection errors with `fmt.Errorf("k8s config: %w",
+        err)` / `"k8s client: %w"` / `"k8s clientset: %w"`.
+  - [x] Startup sanity check: `cfg.CR.APIGroup` must equal
+        `wizapi.GroupVersion.Group`; mismatch is fail-fast (typed
+        client uses imported GVK; runtime override would silently
+        miss the operator).
+- [x] Folded `clientset.go` into `client.go` — both flavors come
+      from the same `NewClients` entry point so callers can't pick up
+      one without the other. `Clients{CtrlClient, Clientset,
+      RESTConfig}` is the single struct downstream packages consume.
+- [x] Tests in `internal/k8s/client_test.go`:
+  - [x] `NewClients` with a non-existent kubeconfig path →
+        `"k8s config:" %w` error.
+  - [x] `NewClients` with a CR.APIGroup mismatched against
+        `wizapi.GroupVersion.Group` → typed mismatch error.
+  - [x] Scheme recognizes `SAMLGroupMapping` / `Project` /
+        `UserRole` plus core ConfigMap/Namespace.
+  - [x] Live-cluster smoke test deferred to Phase 4 envtest.
 
 #### Success Criteria
 
