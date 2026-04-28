@@ -1,0 +1,40 @@
+suite: servicemonitor
+templates:
+  - templates/servicemonitor.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+tests:
+  - it: not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rendered when metrics.serviceMonitor.enabled=true
+    set:
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+      - equal:
+          path: spec.endpoints[0].port
+          value: admin
+      - equal:
+          path: spec.endpoints[0].path
+          value: /metrics
+      - equal:
+          path: spec.endpoints[0].interval
+          value: 30s
+      - equal:
+          path: spec.endpoints[0].scrapeTimeout
+          value: 10s
+
+  - it: extra labels propagate to metadata.labels
+    set:
+      metrics.serviceMonitor.enabled: true
+      metrics.serviceMonitor.labels:
+        prometheus: kube-prometheus
+    asserts:
+      - equal:
+          path: metadata.labels.prometheus
+          value: kube-prometheus

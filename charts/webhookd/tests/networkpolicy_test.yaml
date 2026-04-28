@@ -1,0 +1,64 @@
+suite: networkpolicy
+templates:
+  - templates/networkpolicy.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+tests:
+  - it: not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rendered with default-deny ingress when enabled
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: spec.policyTypes
+          value:
+            - Ingress
+      - contains:
+          path: spec.ingress[0].ports
+          content:
+            port: webhook
+            protocol: TCP
+      - contains:
+          path: spec.ingress[0].ports
+          content:
+            port: admin
+            protocol: TCP
+
+  - it: fromCIDRs list expands into ipBlock peers
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.fromCIDRs:
+        - 10.0.0.0/8
+        - 192.168.1.0/24
+    asserts:
+      - contains:
+          path: spec.ingress[0].from
+          content:
+            ipBlock:
+              cidr: 10.0.0.0/8
+      - contains:
+          path: spec.ingress[0].from
+          content:
+            ipBlock:
+              cidr: 192.168.1.0/24
+
+  - it: fromNamespaces list expands into namespaceSelector peers
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.fromNamespaces:
+        - matchLabels:
+            team: jsm
+    asserts:
+      - contains:
+          path: spec.ingress[0].from
+          content:
+            namespaceSelector:
+              matchLabels:
+                team: jsm

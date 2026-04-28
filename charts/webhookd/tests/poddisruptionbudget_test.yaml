@@ -1,0 +1,44 @@
+suite: poddisruptionbudget
+templates:
+  - templates/poddisruptionbudget.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+tests:
+  - it: not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rendered with default minAvailable=1 when enabled
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - isNull:
+          path: spec.maxUnavailable
+
+  - it: maxUnavailable mode renders only that field
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: ""
+      podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - isNull:
+          path: spec.minAvailable
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  - it: setting both minAvailable and maxUnavailable fails templating
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: 1
+      podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - failedTemplate:
+          errorMessage: "podDisruptionBudget: only one of minAvailable or maxUnavailable may be set"

@@ -342,30 +342,30 @@ commit if Phase 1 lands first.
 
 #### Tasks
 
-- [ ] `templates/servicemonitor.yaml`:
-  - [ ] Gated on `metrics.serviceMonitor.enabled=true`.
-  - [ ] Endpoint targets the `admin` named port, path `/metrics`.
-  - [ ] `interval` and `scrapeTimeout` from values.
-  - [ ] Extra labels from `metrics.serviceMonitor.labels` for
+- [x] `templates/servicemonitor.yaml`:
+  - [x] Gated on `metrics.serviceMonitor.enabled=true`.
+  - [x] Endpoint targets the `admin` named port, path `/metrics`.
+  - [x] `interval` and `scrapeTimeout` from values.
+  - [x] Extra labels from `metrics.serviceMonitor.labels` for
         Prometheus Operator selectors.
-- [ ] `templates/networkpolicy.yaml`:
-  - [ ] Gated on `networkPolicy.enabled=true`.
-  - [ ] Default-deny ingress; allow on the webhook + admin ports
+- [x] `templates/networkpolicy.yaml`:
+  - [x] Gated on `networkPolicy.enabled=true`.
+  - [x] Default-deny ingress; allow on the webhook + admin ports
         from `networkPolicy.ingress.fromCIDRs` and
         `networkPolicy.ingress.fromNamespaces`.
-- [ ] `templates/poddisruptionbudget.yaml`:
-  - [ ] Gated on `podDisruptionBudget.enabled=true`.
-  - [ ] `minAvailable` OR `maxUnavailable` (mutually exclusive); template
-        validation on values.
-- [ ] `templates/crd-precheck-job.yaml` package — three resources behind
+- [x] `templates/poddisruptionbudget.yaml`:
+  - [x] Gated on `podDisruptionBudget.enabled=true`.
+  - [x] `minAvailable` OR `maxUnavailable` (mutually exclusive); template
+        validation on values via `fail`.
+- [x] `templates/crd-precheck-job.yaml` package — four resources behind
       one `crdPrecheck.enabled=true` gate (default on):
-  - [ ] ClusterRole granting `get` on `customresourcedefinitions.apiextensions.k8s.io`,
+  - [x] ClusterRole granting `get` on `customresourcedefinitions.apiextensions.k8s.io`,
         with `helm.sh/hook: pre-install,pre-upgrade`,
         `helm.sh/hook-weight: -10`,
         `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`.
-  - [ ] ServiceAccount in release namespace + ClusterRoleBinding,
+  - [x] ServiceAccount in release namespace + ClusterRoleBinding,
         also pre-install/pre-upgrade with weight `-9`.
-  - [ ] Job with weight `-5`, `backoffLimit: 0`, `ttlSecondsAfterFinished: 60`,
+  - [x] Job with weight `-5`, `backoffLimit: 0`, `ttlSecondsAfterFinished: 60`,
         running `kubectl` from
         `cgr.dev/chainguard/kubectl:latest-dev` (Resolved Decision §4 —
         Chainguard distroless, signed, supply-chain hardened); image
@@ -373,37 +373,42 @@ commit if Phase 1 lands first.
         air-gapped users can override. Job command loops over
         `.Values.crdPrecheck.required` and exits non-zero with a
         descriptive error if any CRD is absent.
-- [ ] `tests/servicemonitor_test.yaml`:
-  - [ ] Default → not rendered.
-  - [ ] `metrics.serviceMonitor.enabled=true` → rendered with admin
+- [x] `tests/servicemonitor_test.yaml` (3 tests):
+  - [x] Default → not rendered.
+  - [x] `metrics.serviceMonitor.enabled=true` → rendered with admin
         port endpoint.
-  - [ ] `metrics.serviceMonitor.labels` propagated.
-- [ ] `tests/networkpolicy_test.yaml`:
-  - [ ] Default → not rendered.
-  - [ ] `networkPolicy.enabled=true` + sample CIDRs → ingress rule
+  - [x] `metrics.serviceMonitor.labels` propagated.
+- [x] `tests/networkpolicy_test.yaml` (4 tests):
+  - [x] Default → not rendered.
+  - [x] `networkPolicy.enabled=true` + sample CIDRs → ingress rule
         contains them.
-- [ ] `tests/poddisruptionbudget_test.yaml`:
-  - [ ] Default → not rendered.
-  - [ ] `podDisruptionBudget.enabled=true` → rendered with default
+  - [x] `fromNamespaces` selectors expand into namespaceSelector peers.
+- [x] `tests/poddisruptionbudget_test.yaml` (4 tests):
+  - [x] Default → not rendered.
+  - [x] `podDisruptionBudget.enabled=true` → rendered with default
         `minAvailable: 1`.
-  - [ ] Setting both `minAvailable` and `maxUnavailable` → template
+  - [x] `maxUnavailable` mode renders only that field.
+  - [x] Setting both `minAvailable` and `maxUnavailable` → template
         error.
-- [ ] `tests/crd-precheck-job_test.yaml`:
-  - [ ] Default (`crdPrecheck.enabled=true`) → all three resources
+- [x] `tests/crd-precheck-job_test.yaml` (5 tests):
+  - [x] Default (`crdPrecheck.enabled=true`) → all four resources
         rendered with correct hook annotations and weights.
-  - [ ] `crdPrecheck.enabled=false` → none rendered.
-  - [ ] `crdPrecheck.required=[a,b,c]` → all three appear in the Job's
-        command args.
+  - [x] `crdPrecheck.enabled=false` → none rendered.
+  - [x] `crdPrecheck.required=[a,b,c]` → all listed CRDs appear in the
+        Job's command args.
+  - [x] Empty `crdPrecheck.required` → template error.
+  - [x] `crdPrecheck.image` override is honored.
 
 #### Success Criteria
 
 - `helm template charts/webhookd --set metrics.serviceMonitor.enabled=true ...`
-  renders the ServiceMonitor; default does not.
+  renders the ServiceMonitor; default does not. ✅
 - `helm install` against kind with `crdPrecheck.enabled=true` and the
   required CRD present succeeds; `helm install` with the required CRD
   *absent* fails the pre-install hook with a clear error and never
-  applies the chart's other manifests.
-- All Phase 2 helm-unittest cases pass.
+  applies the chart's other manifests. ⏳ (Phase 6 smoke test).
+- All Phase 2 helm-unittest cases pass. ✅ — 16 new tests across
+  4 suites; 50 total chart tests across 10 suites.
 
 ---
 
