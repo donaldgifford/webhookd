@@ -43,6 +43,14 @@ type ResponseBody struct {
 	RequestID string `json:"requestId,omitempty"`
 }
 
+// BuildResponse implements webhook.ResponseBuilder so a *Provider
+// (or a standalone instance of this package) can be plugged into the
+// dispatcher directly. The dispatcher takes any-typed bodies; the
+// concrete jsm.ResponseBody is what's actually encoded to the wire.
+func (*Provider) BuildResponse(res webhook.ExecResult, traceID, requestID string) any {
+	return Build(res, traceID, requestID)
+}
+
 // Build constructs the ResponseBody from an ExecResult plus
 // per-request trace and request IDs. Status text is derived from
 // ResultKind:

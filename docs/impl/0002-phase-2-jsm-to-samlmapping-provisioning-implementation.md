@@ -582,68 +582,69 @@ shape goes back to JSM.
 
 #### Tasks
 
-- [ ] Create `internal/webhook/dispatcher.go`:
-  - [ ] `Dispatcher` struct holding
-        `providers map[string]Provider`, `executor *Executor`,
-        `metrics *observability.Metrics`,
-        `logger *slog.Logger`, `maxBodyBytes int64`.
-  - [ ] `NewDispatcher(opts ...Option) *Dispatcher` with functional
-        options: `WithProvider(Provider)`, `WithExecutor(*Executor)`,
-        `WithMetrics(...)`, `WithLogger(...)`, `WithMaxBody(int64)`.
-        Mirrors how Phase 1 already builds narrow constructors.
-  - [ ] `ServeHTTP(w, r)`:
-    - [ ] `name := r.PathValue("provider")` → unknown ⇒ 404 + log.
-    - [ ] Read body with `http.MaxBytesReader`; 413 on oversize, 400
-          on read error.
-    - [ ] `p.VerifySignature(r, body)` → 401 on failure with the
-          existing `signature_validation` metric labels.
-    - [ ] `p.Handle(r.Context(), body)` → on error map to
-          `ExecResult` directly (`ResultBadRequest` for malformed
-          payloads, `ResultInternalError` otherwise).
-    - [ ] `executor.Execute(r.Context(), action)` → ExecResult.
-    - [ ] `writeResponse(w, r, p, result)` — status code from
-          `httpStatus(result.Kind)`, body from
-          `jsm.Build(...)` for the JSM provider; for future providers
-          we'll generalize this via a `ResponseBuilder` interface, but
-          ship Phase 2 with a type-switch on `p.(*jsm.Provider)`.
-- [ ] Update `cmd/webhookd/main.go`:
-  - [ ] Phase B (after observability bring-up): build the K8s client
-        via `k8s.NewClient(cfg)`. Fail fast with a clear message
-        naming `WEBHOOK_KUBECONFIG` if the cluster is unreachable —
-        we cannot serve without it.
-  - [ ] Build the executor:
-        `webhook.NewExecutor(client, clientset, metrics, logger, executorCfg)`.
-  - [ ] Build the JSM provider:
-        `jsmProv := jsm.New(jsm.ConfigFrom(cfg))`.
-  - [ ] Build the dispatcher with `WithProvider(jsmProv)`,
-        `WithExecutor(...)`.
-  - [ ] Replace the Phase 2 "tombstone" handler:
-        `mux.Handle("POST /webhook/{provider}", dispatcher)`.
-  - [ ] Keep the Phase 1 middleware chain unchanged (Recover, OTel,
-        RequestID, SLog, Metrics, RateLimit).
-- [ ] Tests in `internal/webhook/dispatcher_test.go` (no envtest —
-      uses the `providertest` mock):
-  - [ ] Unknown provider → 404.
-  - [ ] Body too large → 413.
-  - [ ] Bad signature → 401.
-  - [ ] Provider returns NoopAction → 200 with `status: "noop"`.
-  - [ ] Provider returns error → mapped status code + error in body.
-  - [ ] Executor returns each `ResultKind` → expected status code per
+- [x] Create `internal/webhook/dispatcher.go`:
+  - [x] `Dispatcher` struct holding
+        `providers map[string]Provider`, `responseBuilder ResponseBuilder`,
+        `executor executorIface`, `logger *slog.Logger`, `maxBodyBytes int64`.
+        Original plan called for functional options; switched to a
+        struct (`DispatcherConfig`) because the field set is small and
+        stable — functional options would have been ceremony.
+  - [x] `NewDispatcher(cfg DispatcherConfig) *Dispatcher`.
+  - [x] `ResponseBuilder` interface added so each provider supplies
+        its own response shape; `*jsm.Provider` implements it via
+        `BuildResponse(res, traceID, requestID) any` (returning
+        `jsm.ResponseBody`). When a second provider lands this stays
+        as one-builder-per-provider rather than a type switch.
+  - [x] `ServeHTTP(w, r)`:
+    - [x] `r.PathValue("provider")` lookup → 404 on miss.
+    - [x] `http.MaxBytesReader` with 413 / 400 classification.
+    - [x] `prov.VerifySignature(r, body)` → 401.
+    - [x] `prov.Handle` → on error, `classifyProviderErr` maps to
+          ResultBadRequest / ResultUnprocessable / ResultInternalError.
+    - [x] `executor.Execute` → ExecResult.
+    - [x] `writeResponse` writes status from `Kind.HTTPStatus()`,
+          body from `responseBuilder.BuildResponse(res, traceID, requestID)`.
+  - [x] Duplicate provider-name registration panics at construction.
+- [x] Update `cmd/webhookd/main.go`:
+  - [x] After observability: `k8s.NewClients(cfg)` (gated on
+        `slices.Contains(cfg.EnabledProviders, "jsm")`).
+  - [x] Build executor with `webhook.NewExecutor(clients.CtrlClient,
+        logger, ExecutorConfig{...})`.
+  - [x] Build JSM provider with `jsm.New(&jsm.Config{...})` reading
+        from `cfg.JSM` and `cfg.CR`.
+  - [x] Build dispatcher; mount at `POST /webhook/{provider}`.
+  - [x] When JSM is disabled, fall back to a 503 tombstone so Phase 1
+        integration tests keep working without K8s.
+  - [x] Phase 1 middleware chain unchanged (Recover, OTel, RequestID,
+        SLog, Metrics, RateLimit).
+- [x] Tests in `internal/webhook/dispatcher_test.go` (no envtest —
+      uses `providertest.Mock`):
+  - [x] Unknown provider → 404.
+  - [x] Body too large → 413.
+  - [x] Bad signature → 401.
+  - [x] Provider returns NoopAction → 200 + `kind: "noop"`.
+  - [x] Provider returns BadRequest / Unprocessable / generic error
+        → 400 / 422 / 500 with matching kind.
+  - [x] Executor returns each `ResultKind` → expected status code per
         DESIGN-0002 §HTTP Response Contract.
-- [ ] Integration test in `cmd/webhookd/main_test.go` (envtest +
-      in-process server):
-  - [ ] Spin up envtest, install the SAMLGroupMapping CRD.
-  - [ ] Boot the full app via `realMain(ctx)` in a goroutine, with
-        env vars pointing at envtest's kubeconfig.
-  - [ ] POST a signed JSM payload (`testdata/sample.json`) to
-        `127.0.0.1:8080/webhook/jsm`.
-  - [ ] In a parallel goroutine, watch for the CR to appear and patch
-        its status to Ready=True.
-  - [ ] Assert the POST returns 200 with `status: "success"` body.
-  - [ ] Assert metrics: `webhookd_k8s_apply_total{kind=...,outcome=created}=1`,
-        `webhookd_k8s_sync_duration_seconds_count{outcome=ready}=1`.
-  - [ ] Trigger graceful shutdown; assert clean exit (no goroutine
-        leaks beyond the agreed ignores).
+  - [x] Duplicate provider names panics.
+- [x] Integration test in `cmd/webhookd/main_test.go`
+      (`TestRun_EndToEnd_JSMToReadyCR`):
+  - [x] envtest started in TestMain (gated on `KUBEBUILDER_ASSETS`),
+        SAMLGroupMapping CRD installed from `deploy/crds/`.
+  - [x] envtest's *rest.Config materialized to a kubeconfig file via
+        `clientcmd.WriteToFile` so `WEBHOOK_KUBECONFIG` can point at
+        it.
+  - [x] Real `run(ctx)` boots in a goroutine; signed JSM payload
+        POSTed to `/webhook/jsm`.
+  - [x] Operator-impersonator goroutine writes Ready=True on the CR.
+  - [x] Asserts 200 + `status: "success"` + `crName: "jsm-sec-9001"`.
+  - [x] `goleak.Find` runs after envtest.Stop with IgnoreTopFunction
+        for envtest's transport-pool / wait-loop residuals.
+  - [ ] Metric assertions on `webhookd_k8s_apply_total` /
+        `webhookd_k8s_sync_duration_seconds` — deferred to Phase 7
+        (the metrics themselves haven't shipped yet; they land in
+        Phase 7 alongside the trace-id ADR).
 
 #### Success Criteria
 
