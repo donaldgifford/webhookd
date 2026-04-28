@@ -85,8 +85,8 @@ unchanged. Only the `/webhook/{provider}` handler is replaced.
   `webhook.NoopAction`, `webhook.ApplySAMLGroupMapping`).
 - Dispatcher that routes `/webhook/{provider}` by path-value to a registered
   provider and forwards the returned action to the executor.
-- Executor that applies the CR via SSA and synchronously waits for sync via
-  `watch.UntilWithSync`.
+- Executor that applies the CR via SSA and synchronously waits for sync
+  via a namespace-scoped `client.WithWatch.Watch()` event loop.
 - JSM provider package (`internal/webhook/jsm`) implementing `Provider`:
   payload decode, custom-field extraction (single `providerGroupId` /
   `role` / `project` strings; cardinality 1:1), spec build, signature
@@ -785,8 +785,7 @@ README updates that turn this from "code merged" into "shippable."
 | `internal/config/config.go` | Modify | `JSMConfig` (TriggerStatus, FieldProviderGroupID, FieldRole, FieldProject), `CRConfig` (Namespace, APIGroup default `wiz.webhookd.io`, APIVersion, FieldManager, SyncTimeout, IdentityProviderID), `EnabledProviders`, `Kubeconfig`. |
 | `internal/config/config_test.go` | Modify | New cases for the additions. |
 | `internal/k8s/scheme.go` | Create | Single shared `runtime.Scheme`. |
-| `internal/k8s/client.go` | Create | `NewClient` wrapper around `ctrl.GetConfig` + `client.New`. |
-| `internal/k8s/clientset.go` | Create | `*kubernetes.Clientset` for watch-tools usage. |
+| `internal/k8s/client.go` | Create | `NewClients` wrapper around `ctrl.GetConfig` + `client.NewWithWatch` + `kubernetes.NewForConfig`; returns `Clients{CtrlClient, Clientset, RESTConfig}`. (Originally planned as a separate `clientset.go`; folded into `client.go` so callers can't pick up one flavor without the other.) |
 | `internal/k8s/*_test.go` | Create | Unit tests on scheme + client construction. |
 | `internal/webhook/wizapi/types.go` | Create *(temporary)* | Local stub of operator API types (`SAMLGroupMapping`, `Project`, `UserRole`, `GroupVersion = wiz.webhookd.io/v1alpha1`, `AddToScheme`) until upstream module is consumable. Deleted once `github.com/donaldgifford/wiz-operator/api/v1alpha1` is importable. |
 | `internal/webhook/handler.go` | **Delete** | Replaced by dispatcher. |
@@ -848,8 +847,7 @@ Direct module imports introduced by this implementation:
 
 - `sigs.k8s.io/controller-runtime` — typed `client.Client`, `ctrl.GetConfig`.
 - `k8s.io/apimachinery` — runtime/scheme, watch package, condition helpers.
-- `k8s.io/client-go` — `kubernetes.Clientset`, `cache.ListWatch`,
-  `tools/watch.UntilWithSync`, `clientcmd`.
+- `k8s.io/client-go` — `kubernetes.Clientset`, `clientcmd`.
 - Operator API module: `github.com/donaldgifford/wiz-operator/api/v1alpha1`
   — `SAMLGroupMapping{Spec,Status}`, `Project`, `UserRole`,
   `GroupVersion = wiz.webhookd.io/v1alpha1`, `AddToScheme`. *The
@@ -917,14 +915,23 @@ reasoning rather than just the outcome (mirrors IMPL-0001's pattern).
    dispatcher replaces them. Two routing models would be one too
    many; the fallback path would never be tested. `signature.go` and
    its tests stay — JSM reuses the v0: HMAC helpers.
-6. **Dual-client watch via `tools/watch.UntilWithSync`.** Phase 3
-   exposes both `client.Client` (controller-runtime, for typed
-   apply) and `*kubernetes.Clientset` (client-go, for the
-   `cache.ListWatch` that `UntilWithSync` consumes). Re-list-on-
-   disconnect semantics come from `UntilWithSync` for free; the
-   alternative (write our own loop on `client.Watch`) reimplements
-   work that already exists. Single shared `rest.Config`; no
-   runtime overhead.
+6. **Single typed `client.WithWatch` + hand-rolled watch loop.** The
+   original plan was dual-client (`client.Client` for typed apply +
+   `*kubernetes.Clientset` for a `cache.ListWatch` feeding
+   `tools/watch.UntilWithSync`). Phase 4 implementation flipped this
+   on its head: we now expose one typed `client.WithWatch` from
+   `internal/k8s`, and the executor's `waitForSync` hand-rolls a
+   namespace-scoped `Watch()` + manual event loop. Driver: under
+   client-go v0.35+ the `WatchListClient` feature gate is default-on,
+   so `UntilWithSync`'s reflector waits for streaming-list bookmarks
+   that a custom `cache.ListWatch` doesn't supply — symptom is a
+   silent watch deadlock until our hard `SyncTimeout` fires. The
+   hand-rolled loop is also simpler given that we already have a
+   deterministic deadline (no need for the reflector's auto-reconnect
+   logic). The clientset is kept around in `Clients{}` for any
+   future core-K8s code paths but is unused at Phase 2. See
+   `internal/webhook/executor.go` `waitForSync` doc comment for the
+   in-code rationale.
 7. **`make tools-envtest` shells to `setup-envtest`.** Standard
    kubebuilder pattern. `setup-envtest use <k8s-version>` fetches
    binaries to `bin/k8s/<version>/`; `make test` exports
@@ -956,10 +963,14 @@ reasoning rather than just the outcome (mirrors IMPL-0001's pattern).
 
 ### Cross-doc follow-ups
 
-- **DESIGN-0002 still has the original strawman CR shape**
+- **DESIGN-0002's body still carries the original strawman CR shape**
   (`SAMLMapping` kind, `wiz.example.com` group, `team` + `projects[]`
-  spec). It will be updated to match the new shape as part of Phase 8
-  when its status flips to Implemented.
+  spec). Phase 8 flipped its status to `Implemented` and added a
+  top-of-doc implementation note pointing at the canonical shape
+  (`docs/examples/samples/wiz_v1alpha1_samlgroupmapping.yaml`) rather
+  than rewriting the body in place — IMPL-0002 §Resolved Decisions
+  §2 is the source of truth for shape questions. A future Phase 3
+  design doc will inherit the canonical shape from there.
 - **Annotation prefix change** from `webhookd.wiz.io/...` (used in
   DESIGN-0002 draft) to `webhookd.io/...` (used here). Captured in
   ADR-0007.
