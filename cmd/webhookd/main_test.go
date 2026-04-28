@@ -6,13 +6,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -69,32 +64,17 @@ func TestRun_HappyPath(t *testing.T) {
 	}
 }
 
-// signBody mirrors the production canonical format. Lifted into the
-// test so future provider tests can share the helper if/when they
-// move into this package.
-func signBody(secret []byte, ts string, body []byte) string {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("v0:" + ts + ":"))
-	mac.Write(body)
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
-}
-
-// TestRun_AcceptsSignedWebhook is the integration end-to-end: the
-// servers really bind, a signed request really hits the public
-// listener, and a scrape of the admin listener really sees the
-// counter increment. This is the test that protects the wiring
-// against package-level refactors that break composition without
-// breaking individual unit tests.
-func TestRun_AcceptsSignedWebhook(t *testing.T) {
-	secret := []byte("topsecret")
-	t.Setenv("WEBHOOK_SIGNING_SECRET", string(secret))
+// TestRun_TombstoneWebhookRoute exercises the in-flight Phase 2 state:
+// the legacy `webhook.NewHandler` is gone, the dispatcher (Phase 6)
+// isn't wired yet, and the route is held by a 503 tombstone so the
+// middleware chain stays exercised. Phase 6 replaces this test with a
+// full envtest end-to-end against the real dispatcher + executor.
+func TestRun_TombstoneWebhookRoute(t *testing.T) {
+	t.Setenv("WEBHOOK_SIGNING_SECRET", "topsecret")
 	t.Setenv("WEBHOOK_ADDR", "127.0.0.1:18091")
 	t.Setenv("WEBHOOK_ADMIN_ADDR", "127.0.0.1:19091")
 	t.Setenv("WEBHOOK_TRACING_ENABLED", "false")
 	t.Setenv("WEBHOOK_SHUTDOWN_TIMEOUT", "5s")
-	// Disable JSM provider — Phase 1 integration tests don't exercise
-	// the JSM/CR pipeline, and JSM enabled would require config that
-	// isn't relevant here. Phase 6 adds a dedicated end-to-end test.
 	t.Setenv("WEBHOOK_PROVIDERS", "")
 	t.Setenv("WEBHOOK_CR_SYNC_TIMEOUT", "2s")
 
@@ -112,53 +92,33 @@ func TestRun_AcceptsSignedWebhook(t *testing.T) {
 		}
 	})
 
-	// Wait for the listeners to bind by polling /healthz. The retry
-	// keeps this test robust on slow CI hosts.
 	if err := waitFor(t, "http://127.0.0.1:19091/healthz"); err != nil {
 		t.Fatalf("admin healthz never became ready: %v", err)
 	}
 
-	body := []byte(`{"event_type":"push","data":{"x":1}}`)
-	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodPost,
 		"http://127.0.0.1:18091/webhook/github",
-		bytes.NewReader(body),
+		bytes.NewReader([]byte(`{"event_type":"push"}`)),
 	)
 	if err != nil {
 		t.Fatalf("build request: %v", err)
 	}
-	req.Header.Set("X-Webhook-Signature", signBody(secret, ts, body))
-	req.Header.Set("X-Webhook-Timestamp", ts)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("post webhook: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 503\nbody: %s", resp.StatusCode, body)
 	}
-
-	// Scrape /metrics and confirm the counter incremented.
-	scrape, err := http.NewRequestWithContext(
-		ctx, http.MethodGet,
-		"http://127.0.0.1:19091/metrics",
-		http.NoBody,
-	)
-	if err != nil {
-		t.Fatalf("build scrape: %v", err)
+	if got := resp.Header.Get("Retry-After"); got != "30" {
+		t.Errorf("Retry-After header = %q, want %q", got, "30")
 	}
-	mResp, err := http.DefaultClient.Do(scrape)
-	if err != nil {
-		t.Fatalf("scrape: %v", err)
-	}
-	defer func() { _ = mResp.Body.Close() }()
-	mBody, _ := io.ReadAll(mResp.Body)
-	want := `webhookd_webhook_events_total{event_type="push",outcome="accepted",provider="github"} 1`
-	if !strings.Contains(string(mBody), want) {
-		t.Errorf("metrics missing accepted counter\nwant: %s\ngot:\n%s",
-			want, mBody)
+	if got := resp.Header.Get("X-Request-Id"); got == "" {
+		t.Error("X-Request-Id header is empty — RequestID middleware not running")
 	}
 }
 

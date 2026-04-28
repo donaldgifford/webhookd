@@ -261,52 +261,46 @@ moves the existing Phase 1 handler aside cleanly.
 
 #### Tasks
 
-- [ ] Create `internal/webhook/provider.go` defining the `Provider`
+- [x] Create `internal/webhook/provider.go` defining the `Provider`
       interface exactly as DESIGN-0002 §Provider Interface specifies:
       `Name()`, `VerifySignature(r, body)`, `Handle(ctx, body) (Action, error)`.
-- [ ] Create `internal/webhook/action.go`:
-  - [ ] `Action` interface with the unexported sentinel `isAction()`
+- [x] Create `internal/webhook/action.go`:
+  - [x] `Action` interface with the unexported sentinel `isAction()`
         method (typed-union pattern; prevents external types from
         masquerading as actions).
-  - [ ] `NoopAction{Reason string}`.
-  - [ ] `ApplySAMLGroupMapping{IssueKey string; Spec wizapi.SAMLGroupMappingSpec}`
+  - [x] `NoopAction{Reason string}`.
+  - [x] `ApplySAMLGroupMapping{IssueKey string; Spec wizapi.SAMLGroupMappingSpec}`
         where `Spec` carries `IdentityProviderID`, `ProviderGroupID`,
-        `Description`, `RoleRef.Name`, `ProjectRefs[0].Name` (single-element
-        list per Phase 2 cardinality: one ticket = one CR with one project
-        and one role).
-        — note: `TraceCtx` from the design doc is not a struct field; the
-        executor receives the request context separately and threads it
-        into spans / annotations. (Carrying a context as a struct field
-        is a Go style anti-pattern.)
-- [ ] Create `internal/webhook/result.go`:
-  - [ ] `ExecResult` struct with `Kind ResultKind, Reason string, CRName,
-        Namespace, ObservedGeneration int64`.
-  - [ ] `ResultKind` enum: `ResultNoop`, `ResultReady`,
+        `Description`, `RoleRef.Name`, `ProjectRefs[0].Name` (single-
+        element list per Phase 2 cardinality: one ticket = one CR
+        with one project and one role).
+  - [x] Sentinel errors `ErrBadRequest` / `ErrUnprocessable` for
+        provider returns; the dispatcher classifies via `errors.Is`.
+- [x] Create `internal/webhook/result.go`:
+  - [x] `ExecResult` struct with `Kind ResultKind, Reason string,
+        CRName, Namespace, ObservedGeneration int64`.
+  - [x] `ResultKind` enum: `ResultNoop`, `ResultReady`,
         `ResultTransientFailure`, `ResultBadRequest`,
-        `ResultInternalError`, `ResultTimeout`. (No
-        `ResultTerminalFailure` — the operator can't distinguish
-        terminal from transient at watch time, so we don't either.
-        422s come from apply-step `IsInvalid` only.)
-  - [ ] `httpStatus(ResultKind) int` helper mapping each kind to the
-        DESIGN-0002 §HTTP Response Contract status code.
-- [ ] Migrate Phase 1's `internal/webhook/handler.go`:
-  - [ ] **Delete** `handler.go` and `handler_test.go`. The
-        dispatcher (Phase 6) replaces them; preserving them as a
-        "default provider" creates two routing models. (Open Questions
-        §5.)
-  - [ ] **Keep** `signature.go` and `signature_test.go` as-is — the
+        `ResultUnprocessable`, `ResultInternalError`, `ResultTimeout`.
+        (No `ResultTerminalFailure` — operator status is binary;
+        Ready=False at watch time falls through to ResultTimeout.)
+  - [x] `HTTPStatus()` method on `ResultKind` mapping each kind to
+        the DESIGN-0002 §HTTP Response Contract status code, plus
+        `String()` for label-safe metric values.
+- [x] Migrate Phase 1's `internal/webhook/handler.go`:
+  - [x] **Delete** `handler.go` and `handler_test.go`. The
+        dispatcher (Phase 6) replaces them.
+  - [x] **Keep** `signature.go` and `signature_test.go` as-is — the
         `Verify*` helpers are reused by the JSM provider's
-        `VerifySignature` for any v0:-style HMAC. Move to
-        `internal/webhook/sigutil/` if the import cycle requires it
-        (the `webhook` package doesn't import provider packages, so
-        same-package should be fine).
-  - [ ] Update `cmd/webhookd/main.go` temporarily to register a
-        "tombstone" 503 handler at `POST /webhook/{provider}` until
-        Phase 6 wires the dispatcher. This keeps the binary buildable
-        between Phase 2 and Phase 6 commits.
-- [ ] Add a tiny `Provider` mock helper in
-      `internal/webhook/providertest/` returning a configurable Action
-      so the dispatcher tests in Phase 6 don't have to spin up JSM.
+        `VerifySignature` for any v0:-style HMAC.
+  - [x] Update `cmd/webhookd/main.go` to register a "tombstone" 503
+        handler at `POST /webhook/{provider}` (with
+        `Retry-After: 30`) until Phase 6 wires the dispatcher.
+- [x] Add a tiny `Provider` mock helper in
+      `internal/webhook/providertest/` (`Mock{NameValue, VerifyFunc,
+      HandleFunc}`) so the dispatcher tests in Phase 6 don't have to
+      spin up JSM. Compile-time check that `*Mock` satisfies
+      `webhook.Provider`.
 
 #### Success Criteria
 

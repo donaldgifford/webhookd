@@ -27,7 +27,6 @@ import (
 	"github.com/donaldgifford/webhookd/internal/config"
 	"github.com/donaldgifford/webhookd/internal/httpx"
 	"github.com/donaldgifford/webhookd/internal/observability"
-	"github.com/donaldgifford/webhookd/internal/webhook"
 )
 
 // Build-time provenance, injected via
@@ -151,17 +150,15 @@ func buildPublicHandler(
 	metrics *observability.Metrics,
 ) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /webhook/{provider}", webhook.NewHandler(
-		webhook.HandlerConfig{
-			SigningSecret:   cfg.SigningSecret,
-			MaxBodyBytes:    cfg.MaxBodyBytes,
-			SignatureHeader: cfg.SignatureHeader,
-			TimestampHeader: cfg.TimestampHeader,
-			TimestampSkew:   cfg.TimestampSkew,
-		},
-		logger,
-		metrics,
-	))
+	// Phase 2 tombstone: the old single-handler intake is gone, the
+	// dispatcher lands in Phase 6. Returning 503 keeps the route alive
+	// (so Phase 1 admin probes still work cleanly) while every actual
+	// signed request fails fast — JSM and any other caller will retry,
+	// which is the right behavior until Phase 6 wires the real path.
+	mux.HandleFunc("POST /webhook/{provider}", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		http.Error(w, "webhook dispatcher not yet wired", http.StatusServiceUnavailable)
+	})
 	return httpx.Chain(
 		mux,
 		httpx.Recover(logger, metrics),
