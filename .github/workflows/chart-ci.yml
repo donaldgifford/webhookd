@@ -41,9 +41,8 @@ jobs:
           version: v3.19.0
 
       - name: Run helm-unittest
-        uses: helm-unittest/helm-unittest-action@v2
+        uses: d3adb5/helm-unittest-action@v2
         with:
-          file: "tests/*_test.yaml"
           charts: charts/webhookd
 
   ct:
