@@ -96,7 +96,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/donaldgifford/
+          images: ghcr.io/donaldgifford/webhookd
           tags: |
             type=semver,pattern={{version}},value=${{ needs.bump-version.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.bump-version.outputs.tag }}
@@ -105,8 +105,9 @@ jobs:
       - name: Build and push Docker images
         uses: docker/bake-action@v6
         with:
-          targets: release
+          targets: webhookd
           source: .
+          push: true
           files: |
             docker-bake.hcl
             ${{ steps.meta.outputs.bake-file-tags }}
