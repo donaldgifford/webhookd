@@ -55,7 +55,7 @@ spec:
             - name: WEBHOOK_SHUTDOWN_TIMEOUT
               value: {{ .Values.config.shutdownTimeout | quote }}
             - name: WEBHOOK_MAX_BODY_BYTES
-              value: {{ .Values.config.bodyMaxBytes | quote }}
+              value: {{ printf "%d" (.Values.config.bodyMaxBytes | int64) | quote }}
             # Rate limiting
             {{- if .Values.config.rateLimit.enabled }}
             - name: WEBHOOK_RATE_LIMIT_RPS
