@@ -1,0 +1,23 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "webhookd.fullname" . }}
+  namespace: {{ include "webhookd.targetNamespace" . }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+rules:
+  # SAMLGroupMapping CRs are written via Server-Side Apply (patch),
+  # then refetched (get) and watched (list, watch) until the operator
+  # marks them Ready=True. No create/update/delete — SSA covers it
+  # and we never tear CRs down from webhookd.
+  - apiGroups:
+      - wiz.webhookd.io
+    resources:
+      - samlgroupmappings
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+{{- end }}

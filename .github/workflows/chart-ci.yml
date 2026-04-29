@@ -1,0 +1,136 @@
+---
+name: Chart CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "ct.yaml"
+      - ".github/workflows/chart-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: helm lint
+        run: helm lint charts/webhookd -f charts/webhookd/ci/ci-values.yaml
+
+  unittest:
+    name: helm-unittest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Run helm-unittest
+        uses: d3adb5/helm-unittest-action@v2
+        with:
+          charts: charts/webhookd
+
+  ct:
+    name: chart-testing (lint + install on kind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          check-latest: true
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+        with:
+          version: v3.14.0
+
+      - name: Run ct list-changed
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --config ct.yaml)
+          if [ -n "$changed" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run ct lint
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct lint --config ct.yaml
+
+      - name: Set up Docker Buildx
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build webhookd image for ct install
+        # Build a local image tag the chart can pull via image.tag=ci.
+        # Avoids the chicken-and-egg problem where ghcr.io/.../webhookd:<appVersion>
+        # doesn't exist yet at chart-PR time (binary tag is cut after the
+        # chart merges per Resolved Decision §1).
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          docker build -t webhookd:ci .
+
+      - name: Create kind cluster
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: helm/kind-action@v1
+        with:
+          version: v0.27.0
+          kubectl_version: v1.31.4
+
+      - name: Load webhookd:ci image into kind
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          kind load docker-image webhookd:ci --name chart-testing
+
+      - name: Pre-create CRD + target namespace
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          kubectl create namespace ct-target
+          kubectl apply -f deploy/crds/samlgroupmapping.yaml
+
+      - name: Run ct install
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          ct install --config ct.yaml \
+            --helm-extra-set-args "--set=image.repository=webhookd --set=image.tag=ci --set=image.pullPolicy=Never"
+
+  docs-drift:
+    name: helm-docs drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run helm-docs and check for drift
+        uses: losisin/helm-docs-github-action@v1
+        with:
+          chart-search-root: charts
+          fail-on-diff: true

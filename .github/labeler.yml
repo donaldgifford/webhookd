@@ -44,6 +44,11 @@ docker:
       - any-glob-to-any-file: Dockerfile
       - any-glob-to-any-file: docker-bake.hcl
 
+chart:
+  - changed-files:
+      - any-glob-to-any-file: "charts/**"
+      - any-glob-to-any-file: ct.yaml
+
 # Add label to any PR where the head branch name starts with label name or has a label name in the section in the name
 feature:
   - head-branch: ["^feature", "feature"]

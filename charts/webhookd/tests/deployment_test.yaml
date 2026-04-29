@@ -1,0 +1,195 @@
+suite: deployment
+templates:
+  - templates/deployment.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+set:
+  jsm.crIdentityProviderID: test-idp
+  signing.createSecret: true
+  signing.secret: topsecret
+tests:
+  - it: renders a Deployment with default replicas and AppVersion fallback tag
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: webhookd
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/donaldgifford/webhookd:0.1.0
+
+  - it: image.tag override wins over Chart.AppVersion
+    set:
+      image.tag: v1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/donaldgifford/webhookd:v1.2.3
+
+  - it: replicaCount override is reflected in spec
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: WEBHOOK_PROVIDERS is "jsm" when jsm.enabled=true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_PROVIDERS
+            value: jsm
+
+  - it: WEBHOOK_PROVIDERS is empty when jsm.enabled=false
+    set:
+      jsm.enabled: false
+      jsm.crIdentityProviderID: ""
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_PROVIDERS
+            value: ""
+
+  - it: includes all required JSM env vars when jsm.enabled=true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID
+            value: customfield_10001
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_JSM_FIELD_ROLE
+            value: customfield_10002
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_JSM_FIELD_PROJECT
+            value: customfield_10003
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
+            value: test-idp
+
+  - it: skips JSM env vars when jsm.enabled=false
+    set:
+      jsm.enabled: false
+      jsm.crIdentityProviderID: ""
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID
+            value: customfield_10001
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
+            value: test-idp
+
+  - it: jsm.crIdentityProviderID empty + jsm.enabled=true is rejected by the values schema
+    set:
+      jsm.crIdentityProviderID: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "jsm/crIdentityProviderID.*minLength"
+
+  - it: signing.createSecret=true points secretKeyRef at chart-local Secret
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="WEBHOOK_SIGNING_SECRET")].valueFrom.secretKeyRef.name
+          value: webhookd-signing
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="WEBHOOK_SIGNING_SECRET")].valueFrom.secretKeyRef.key
+          value: webhookSecret
+
+  - it: signing.createSecret=false + existingSecret points secretKeyRef at the named Secret
+    set:
+      signing.createSecret: false
+      signing.secret: ""
+      signing.existingSecret: external-signing
+      signing.existingSecretKey: hmac-key
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="WEBHOOK_SIGNING_SECRET")].valueFrom.secretKeyRef.name
+          value: external-signing
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="WEBHOOK_SIGNING_SECRET")].valueFrom.secretKeyRef.key
+          value: hmac-key
+
+  - it: signing.createSecret=false + existingSecret empty is rejected by the values schema
+    set:
+      signing.createSecret: false
+      signing.secret: ""
+      signing.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "signing.*oneOf.*failed"
+
+  - it: applies podSecurityContext defaults
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+
+  - it: applies container securityContext defaults
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+
+  - it: probes target the admin port by name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: admin
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: admin
+
+  - it: declares both webhook and admin container ports
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: webhook
+            containerPort: 8080
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: admin
+            containerPort: 9090
+            protocol: TCP
+
+  - it: mounts /tmp emptyDir for read-only root FS scratch
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}

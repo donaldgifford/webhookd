@@ -1,0 +1,107 @@
+{{- if .Values.crdPrecheck.enabled -}}
+{{- $name := printf "%s-crd-precheck" (include "webhookd.fullname" .) -}}
+{{- $required := .Values.crdPrecheck.required -}}
+{{- if not $required }}
+{{- fail "crdPrecheck.required must list at least one CRD when crdPrecheck.enabled=true" }}
+{{- end }}
+---
+# pre-install / pre-upgrade hook ClusterRole — needs to read CRDs
+# cluster-wide because CustomResourceDefinitions live in the cluster
+# scope. Cleaned up after the hook succeeds.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-9"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-9"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      labels:
+        {{- include "webhookd.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      restartPolicy: Never
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kubectl
+          image: "{{ .Values.crdPrecheck.image.repository }}:{{ .Values.crdPrecheck.image.tag }}"
+          imagePullPolicy: {{ .Values.crdPrecheck.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              missing=""
+              for crd in {{ join " " $required }}; do
+                if ! kubectl get crd "$crd" >/dev/null 2>&1; then
+                  missing="$missing $crd"
+                fi
+              done
+              if [ -n "$missing" ]; then
+                echo "ERROR: required CRDs not present in cluster:$missing"
+                echo "Install the operator owning these CRDs (or set crdPrecheck.enabled=false to skip)."
+                exit 1
+              fi
+              echo "All required CRDs present:{{ range $required }} {{ . }}{{ end }}"
+{{- end }}

@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "webhookd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "webhookd.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "webhookd.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "webhookd.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: webhookd
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: webhook
+              containerPort: {{ .Values.config.port }}
+              protocol: TCP
+            - name: admin
+              containerPort: {{ .Values.config.adminPort }}
+              protocol: TCP
+          env:
+            # Core listeners
+            - name: WEBHOOK_ADDR
+              value: ":{{ .Values.config.port }}"
+            - name: WEBHOOK_ADMIN_ADDR
+              value: ":{{ .Values.config.adminPort }}"
+            - name: WEBHOOK_SHUTDOWN_TIMEOUT
+              value: {{ .Values.config.shutdownTimeout | quote }}
+            - name: WEBHOOK_MAX_BODY_BYTES
+              value: {{ printf "%d" (.Values.config.bodyMaxBytes | int64) | quote }}
+            # Rate limiting
+            {{- if .Values.config.rateLimit.enabled }}
+            - name: WEBHOOK_RATE_LIMIT_RPS
+              value: {{ .Values.config.rateLimit.rps | quote }}
+            - name: WEBHOOK_RATE_LIMIT_BURST
+              value: {{ .Values.config.rateLimit.burst | quote }}
+            {{- end }}
+            # Tracing
+            - name: WEBHOOK_TRACING_ENABLED
+              value: {{ .Values.config.tracing.enabled | quote }}
+            {{- if .Values.config.tracing.enabled }}
+            {{- with .Values.config.tracing.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            - name: WEBHOOK_TRACING_SAMPLE_RATIO
+              value: {{ .Values.config.tracing.sampleRatio | quote }}
+            {{- end }}
+            # pprof
+            - name: WEBHOOK_PPROF_ENABLED
+              value: {{ .Values.config.pprof.enabled | quote }}
+            # Provider allow-list (computed from per-provider enabled flags)
+            - name: WEBHOOK_PROVIDERS
+              value: {{ include "webhookd.enabledProviders" . | quote }}
+            # In-cluster client — leave WEBHOOK_KUBECONFIG empty.
+            - name: WEBHOOK_KUBECONFIG
+              value: ""
+            # HMAC signing key
+            - name: WEBHOOK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "webhookd.signingSecretName" . }}
+                  key: {{ include "webhookd.signingSecretKey" . }}
+            {{- if .Values.jsm.enabled }}
+            # JSM provider config
+            - name: WEBHOOK_JSM_TRIGGER_STATUS
+              value: {{ .Values.jsm.triggerStatus | quote }}
+            - name: WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID
+              value: {{ required "jsm.fieldProviderGroupID is required when jsm.enabled=true" .Values.jsm.fieldProviderGroupID | quote }}
+            - name: WEBHOOK_JSM_FIELD_ROLE
+              value: {{ required "jsm.fieldRole is required when jsm.enabled=true" .Values.jsm.fieldRole | quote }}
+            - name: WEBHOOK_JSM_FIELD_PROJECT
+              value: {{ required "jsm.fieldProject is required when jsm.enabled=true" .Values.jsm.fieldProject | quote }}
+            - name: WEBHOOK_CR_SYNC_TIMEOUT
+              value: {{ .Values.jsm.syncTimeout | quote }}
+            - name: WEBHOOK_CR_NAMESPACE
+              value: {{ default (include "webhookd.targetNamespace" .) .Values.jsm.crNamespace | quote }}
+            - name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
+              value: {{ required "jsm.crIdentityProviderID is required when jsm.enabled=true" .Values.jsm.crIdentityProviderID | quote }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            # Read-only root FS forces a writable scratch dir for the
+            # OTel batch processor and signal-handler temporaries.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

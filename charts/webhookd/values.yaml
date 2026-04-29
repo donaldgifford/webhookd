@@ -1,0 +1,216 @@
+# yaml-language-server: $schema=values.schema.json
+# Default values for the webhookd Helm chart.
+# Every leaf carries a `# --` annotation for helm-docs README rendering.
+
+image:
+  # -- Container image repository.
+  repository: ghcr.io/donaldgifford/webhookd
+  # -- Container image tag. Defaults to `.Chart.AppVersion` when empty.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- List of references to secrets in the same namespace used to pull the image.
+imagePullSecrets: []
+
+# -- Override the chart name. Defaults to `Chart.Name`.
+nameOverride: ""
+
+# -- Override the fully qualified app name. Defaults to `Release.Name-Chart.Name`.
+fullnameOverride: ""
+
+# -- Number of webhookd replicas.
+replicaCount: 1
+
+# -- Pod-level annotations.
+podAnnotations: {}
+
+# -- Pod-level labels.
+podLabels: {}
+
+podSecurityContext:
+  # -- Run all containers as non-root users.
+  runAsNonRoot: true
+  # -- Numeric UID the container runs as. `65532` matches the distroless `nonroot` user.
+  runAsUser: 65532
+  # -- File-system group applied to mounted volumes.
+  fsGroup: 65532
+
+securityContext:
+  # -- Mount the container root filesystem read-only.
+  readOnlyRootFilesystem: true
+  # -- Block privilege escalation via setuid binaries.
+  allowPrivilegeEscalation: false
+  capabilities:
+    # -- Drop every Linux capability; webhookd needs none.
+    drop:
+      - ALL
+
+resources:
+  requests:
+    # -- CPU request.
+    cpu: 50m
+    # -- Memory request.
+    memory: 64Mi
+  limits:
+    # -- CPU limit.
+    cpu: 200m
+    # -- Memory limit.
+    memory: 256Mi
+
+# -- Liveness probe spec (passed verbatim into the Pod template).
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: admin
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# -- Readiness probe spec (passed verbatim into the Pod template).
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: admin
+  initialDelaySeconds: 2
+  periodSeconds: 5
+
+service:
+  # -- Service type for the webhookd-fronting Service.
+  type: ClusterIP
+  # -- TCP port the Service exposes for inbound webhook traffic.
+  webhookPort: 8080
+  # -- TCP port the Service exposes for the admin endpoints (metrics, probes, pprof).
+  adminPort: 9090
+
+serviceAccount:
+  # -- Create a dedicated ServiceAccount for webhookd.
+  create: true
+  # -- Annotations applied to the ServiceAccount (e.g. IAM role bindings).
+  annotations: {}
+  # -- Override the generated ServiceAccount name.
+  name: ""
+
+rbac:
+  # -- Create the Role + RoleBinding for managing the webhookd CR(s).
+  create: true
+  # -- Namespace where the wiz-operator and `SAMLGroupMapping` CRs live.
+  # The chart writes Role + RoleBinding into this namespace, even though
+  # the release itself is installed elsewhere.
+  targetNamespace: wiz-operator
+
+# webhookd application config — keys map 1:1 onto `WEBHOOK_*` env vars.
+config:
+  # -- TCP port the webhook listener binds to. Mirror with `service.webhookPort`.
+  port: 8080
+  # -- TCP port the admin listener binds to. Mirror with `service.adminPort`.
+  adminPort: 9090
+  # -- Maximum time the server has to drain in-flight work on SIGTERM.
+  shutdownTimeout: 30s
+  # -- Reject webhook bodies larger than this (1 MiB by default).
+  bodyMaxBytes: 1048576
+  rateLimit:
+    # -- Toggle the per-provider token-bucket rate limiter.
+    enabled: true
+    # -- Steady-state requests-per-second per provider.
+    rps: 50
+    # -- Burst capacity per provider.
+    burst: 100
+  tracing:
+    # -- Enable OpenTelemetry traces.
+    enabled: false
+    # -- OTLP/HTTP endpoint.
+    endpoint: ""
+    # -- Sampler ratio in `[0.0, 1.0]`. `1.0` traces every request.
+    sampleRatio: 1.0
+  pprof:
+    # -- Expose `/debug/pprof/*` on the admin listener.
+    enabled: false
+
+# JSM provider toggles. Future providers (slack, github, etc.) land as
+# sibling top-level blocks alongside `jsm:`. `WEBHOOK_PROVIDERS` is
+# computed at template time from whichever `enabled` flags are set.
+jsm:
+  # -- Enable the JSM webhook → `SAMLGroupMapping` provider.
+  enabled: true
+  # -- Trigger value of `request.currentStatus.statusName` that maps to a CR apply.
+  triggerStatus: "Approved"
+  # -- JSM custom-field ID carrying the SAML group/provider ID payload.
+  fieldProviderGroupID: "customfield_10001"
+  # -- JSM custom-field ID carrying the role payload.
+  fieldRole: "customfield_10002"
+  # -- JSM custom-field ID carrying the project payload.
+  fieldProject: "customfield_10003"
+  # -- Maximum time to wait for the operator to mark the CR `Ready=True`. Must be < `config.shutdownTimeout`.
+  syncTimeout: 20s
+  # -- Namespace into which `SAMLGroupMapping` CRs are written. Defaults to `rbac.targetNamespace` when empty.
+  crNamespace: ""
+  # -- IDP id stamped on `spec.identityProviderID`. **Required** when `jsm.enabled=true`.
+  crIdentityProviderID: ""
+
+# HMAC signing secret. Use either `existingSecret` (preferred — supports
+# external secret managers) or `createSecret` (renders an in-cluster Secret).
+signing:
+  # -- Name of an existing Secret containing the signing key. Required when `createSecret=false`.
+  existingSecret: ""
+  # -- Key in the existing Secret that holds the signing material.
+  existingSecretKey: webhookSecret
+  # -- Inline-create a Secret from the value below. **Never** commit a real secret to values.yaml.
+  createSecret: false
+  # -- Signing-key value used when `createSecret=true`.
+  secret: ""
+
+metrics:
+  serviceMonitor:
+    # -- Render a Prometheus Operator `ServiceMonitor`.
+    enabled: false
+    # -- Scrape interval.
+    interval: 30s
+    # -- Scrape timeout.
+    scrapeTimeout: 10s
+    # -- Extra labels applied to the `ServiceMonitor` for Prometheus selectors.
+    labels: {}
+
+networkPolicy:
+  # -- Render a default-deny + allow-listed-sources NetworkPolicy.
+  enabled: false
+  ingress:
+    # -- CIDR blocks allowed to reach the webhook + admin ports.
+    fromCIDRs: []
+    # -- Namespace selectors allowed to reach the webhook + admin ports.
+    fromNamespaces: []
+
+podDisruptionBudget:
+  # -- Render a PodDisruptionBudget.
+  enabled: false
+  # -- Minimum number of pods that must remain available. Mutually exclusive with `maxUnavailable`.
+  minAvailable: 1
+  # -- Maximum number of pods that may become unavailable. Mutually exclusive with `minAvailable`.
+  maxUnavailable: ""
+
+# CRD prerequisite check — runs as a pre-install/pre-upgrade Helm hook
+# that verifies required CRDs exist before any chart manifest applies.
+crdPrecheck:
+  # -- Run the pre-install CRD-presence check Job.
+  enabled: true
+  # -- CRDs that must exist before the chart applies its templates.
+  required:
+    - samlgroupmappings.wiz.webhookd.io
+  image:
+    # -- Container image used by the precheck Job. Chainguard's distroless kubectl is the default.
+    repository: cgr.dev/chainguard/kubectl
+    # -- Tag for the precheck image.
+    tag: latest-dev
+    # -- Pull policy for the precheck image.
+    pullPolicy: IfNotPresent
+
+# -- Node selector applied to the webhookd Pod.
+nodeSelector: {}
+
+# -- Tolerations applied to the webhookd Pod.
+tolerations: []
+
+# -- Affinity rules applied to the webhookd Pod.
+affinity: {}
+
+# -- Topology-spread constraints applied to the webhookd Pod.
+topologySpreadConstraints: []

@@ -130,6 +130,82 @@ ifneq ($(wildcard $(SETUP_ENVTEST)),)
 export KUBEBUILDER_ASSETS := $(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir=$(abspath $(ENVTEST_BIN_DIR)) -p path 2>/dev/null)
 endif
 
+## Helm Chart Toolchain
+
+CHART_DIR              := charts/webhookd
+CHART_NAME             := webhookd
+HELM_UNITTEST_VERSION  ?= 1.0.3
+HELM_REGISTRY          ?= ghcr.io/donaldgifford/charts
+
+.PHONY: chart-tools
+.PHONY: helm-lint helm-template helm-template-ci helm-package
+.PHONY: helm-unittest helm-test helm-ct-lint helm-ct-list-changed helm-ct-install
+.PHONY: helm-docs helm-docs-check helm-diff-check helm-cr-package helm-push
+
+chart-tools: ## Install helm plugins not managed by mise (helm-unittest)
+	@ $(MAKE) --no-print-directory log-$@
+	@helm plugin list 2>/dev/null | awk '{print $$1}' | grep -qx unittest \
+		|| helm plugin install https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION)
+	@echo "✓ helm-unittest plugin installed (version $(HELM_UNITTEST_VERSION))"
+
+helm-lint: ## Lint the webhookd Helm chart with `helm lint` against ci-values.yaml
+	@ $(MAKE) --no-print-directory log-$@
+	@helm lint $(CHART_DIR) -f $(CHART_DIR)/ci/ci-values.yaml
+
+helm-template: ## Render the chart with default values
+	@ $(MAKE) --no-print-directory log-$@
+	@helm template $(CHART_NAME) $(CHART_DIR)
+
+helm-template-ci: ## Render the chart with CI values overrides
+	@ $(MAKE) --no-print-directory log-$@
+	@helm template $(CHART_NAME) $(CHART_DIR) -f $(CHART_DIR)/ci/ci-values.yaml
+
+helm-package: ## Package the chart into a versioned `.tgz`
+	@ $(MAKE) --no-print-directory log-$@
+	@helm package $(CHART_DIR)
+
+helm-unittest: chart-tools ## Run helm-unittest cases under the chart
+	@ $(MAKE) --no-print-directory log-$@
+	@helm unittest $(CHART_DIR)
+
+helm-test: helm-lint helm-unittest ## Run helm lint and helm-unittest
+	@echo "✓ Helm chart lint + unit tests passed"
+
+helm-ct-lint: ## Run `ct lint` against the chart directory
+	@ $(MAKE) --no-print-directory log-$@
+	@ct lint --config ct.yaml --debug
+
+helm-ct-list-changed: ## List charts changed since the target branch
+	@ $(MAKE) --no-print-directory log-$@
+	@ct list-changed --config ct.yaml
+
+helm-ct-install: ## Run `ct install` against the current kube context (kind)
+	@ $(MAKE) --no-print-directory log-$@
+	@ct install --config ct.yaml --debug
+
+helm-docs: ## Regenerate chart README via helm-docs
+	@ $(MAKE) --no-print-directory log-$@
+	@helm-docs --chart-search-root charts
+
+helm-docs-check: ## Fail when `helm-docs` would change committed README files
+	@ $(MAKE) --no-print-directory log-$@
+	@helm-docs --chart-search-root charts
+	@git diff --exit-code -- charts/**/README.md \
+		|| { echo "helm-docs drift detected — run 'make helm-docs' and commit the result"; exit 1; }
+
+helm-diff-check: ## Diff the locally-rendered chart against an installed release (RELEASE=name required)
+	@ $(MAKE) --no-print-directory log-$@
+	@if [ -z "$(RELEASE)" ]; then echo "Error: RELEASE is required. Usage: make helm-diff-check RELEASE=webhookd"; exit 1; fi
+	@helm diff upgrade $(RELEASE) $(CHART_DIR)
+
+helm-cr-package: ## Package the chart with chart-releaser into `.cr-release-packages/`
+	@ $(MAKE) --no-print-directory log-$@
+	@cr package $(CHART_DIR)
+
+helm-push: helm-package ## Package and push the chart to the OCI registry (HELM_REGISTRY)
+	@ $(MAKE) --no-print-directory log-$@
+	@helm push $(CHART_NAME)-*.tgz oci://$(HELM_REGISTRY)
+
 ## License Compliance
 
 license-check: ## Check dependency licenses against allowed list

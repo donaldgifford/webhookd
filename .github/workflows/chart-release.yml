@@ -1,0 +1,94 @@
+---
+name: Chart Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      chart-version:
+        description: "Chart version to release (must match Chart.yaml)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release-oci:
+    name: Push chart to ghcr.io OCI registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Verify Chart.yaml version matches input
+        run: |
+          chart_version=$(grep '^version:' charts/webhookd/Chart.yaml | awk '{print $2}')
+          if [ "$chart_version" != "${{ github.event.inputs.chart-version }}" ]; then
+            echo "Chart.yaml version ($chart_version) does not match input (${{ github.event.inputs.chart-version }})"
+            exit 1
+          fi
+
+      - name: helm registry login
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: helm package
+        run: helm package charts/webhookd -d /tmp/charts
+
+      - name: helm push to OCI
+        run: |
+          helm push /tmp/charts/webhookd-*.tgz oci://ghcr.io/donaldgifford/charts
+
+  release-gh-pages:
+    name: Mirror chart to gh-pages
+    needs: release-oci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          # Grab the block from the first `## ` heading to (but not
+          # including) the next `## ` heading. chart-releaser-action
+          # consumes this via --release-notes-file.
+          mkdir -p /tmp/release-notes
+          awk '/^## /{n++} n==1{print} n==2{exit}' \
+            charts/webhookd/CHANGELOG.md > /tmp/release-notes/webhookd.md
+          echo "file=/tmp/release-notes/webhookd.md" >> "$GITHUB_OUTPUT"
+
+      - name: Run chart-releaser-action
+        uses: helm/chart-releaser-action@v1
+        with:
+          charts_dir: charts
+          skip_existing: true
+          config: cr.yaml
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CR_RELEASE_NOTES_FILE: ${{ steps.notes.outputs.file }}

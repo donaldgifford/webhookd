@@ -1,0 +1,25 @@
+apiVersion: v2
+name: webhookd
+description: Stateless HTTP webhook receiver that maps signed payloads to Kubernetes custom resources.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0"
+keywords:
+  - webhook
+  - jira
+  - jsm
+  - kubernetes
+  - operator
+home: https://github.com/donaldgifford/webhookd
+sources:
+  - https://github.com/donaldgifford/webhookd
+maintainers:
+  - name: Donald Gifford
+    url: https://github.com/donaldgifford
+icon: https://raw.githubusercontent.com/donaldgifford/webhookd/main/.github/assets/icon.png
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial chart release matching webhookd v0.1.0.

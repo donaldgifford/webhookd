@@ -1,0 +1,90 @@
+suite: crd-precheck-job
+templates:
+  - templates/crd-precheck-job.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+set:
+  jsm.crIdentityProviderID: ci-test-idp
+  signing.createSecret: true
+  signing.secret: ci-test-secret
+tests:
+  - it: enabled by default — renders all four hook resources
+    asserts:
+      - hasDocuments:
+          count: 4
+      - documentIndex: 0
+        isKind:
+          of: ClusterRole
+      - documentIndex: 0
+        equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - documentIndex: 0
+        equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-10"
+      - documentIndex: 1
+        isKind:
+          of: ServiceAccount
+      - documentIndex: 1
+        equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-9"
+      - documentIndex: 2
+        isKind:
+          of: ClusterRoleBinding
+      - documentIndex: 2
+        equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-9"
+      - documentIndex: 3
+        isKind:
+          of: Job
+      - documentIndex: 3
+        equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-5"
+      - documentIndex: 3
+        equal:
+          path: spec.backoffLimit
+          value: 0
+
+  - it: crdPrecheck.enabled=false skips rendering
+    set:
+      crdPrecheck.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: required CRDs appear in the Job command
+    set:
+      crdPrecheck.required:
+        - foo.example.com
+        - bar.example.com
+    asserts:
+      - documentIndex: 3
+        matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "foo.example.com"
+      - documentIndex: 3
+        matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "bar.example.com"
+
+  - it: empty crdPrecheck.required is rejected by the values schema
+    set:
+      crdPrecheck.required: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "crdPrecheck/required.*minItems"
+
+  - it: crdPrecheck.image override is honored
+    set:
+      crdPrecheck.image.repository: example.com/custom-kubectl
+      crdPrecheck.image.tag: v1.31.0
+    asserts:
+      - documentIndex: 3
+        equal:
+          path: spec.template.spec.containers[0].image
+          value: example.com/custom-kubectl:v1.31.0

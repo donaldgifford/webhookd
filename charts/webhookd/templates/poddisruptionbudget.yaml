@@ -1,0 +1,23 @@
+{{- if .Values.podDisruptionBudget.enabled -}}
+{{- $minAvailable := .Values.podDisruptionBudget.minAvailable -}}
+{{- $maxUnavailable := .Values.podDisruptionBudget.maxUnavailable -}}
+{{- if and $minAvailable $maxUnavailable }}
+{{- fail "podDisruptionBudget: only one of minAvailable or maxUnavailable may be set" }}
+{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "webhookd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "webhookd.selectorLabels" . | nindent 6 }}
+  {{- if $minAvailable }}
+  minAvailable: {{ $minAvailable }}
+  {{- else if $maxUnavailable }}
+  maxUnavailable: {{ $maxUnavailable }}
+  {{- end }}
+{{- end }}

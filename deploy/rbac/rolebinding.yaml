@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 webhookd contributors
 #
+# DEPLOY/RBAC IS A TEST FIXTURE, NOT THE PRODUCTION INSTALL PATH.
+# Production installs use the Helm chart at charts/webhookd/.
+# These manifests are kept around because the integration tests
+# load them directly via kustomize.
+#
 # Binds the Role above to webhookd's ServiceAccount across namespace
 # boundaries: the SA lives in `webhookd`, the Role lives in
 # `wiz-operator` (where the CRs are applied). The cross-namespace

@@ -1,0 +1,21 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "webhookd.fullname" . }}
+  # Cross-namespace binding: the Role lives in `targetNamespace`
+  # (where the operator owns the CRDs) but the SA lives in the
+  # release namespace. Kubernetes resolves the subject's namespace
+  # at auth time, so this is fine.
+  namespace: {{ include "webhookd.targetNamespace" . }}
+  labels:
+    {{- include "webhookd.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "webhookd.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "webhookd.fullname" . }}
+{{- end }}

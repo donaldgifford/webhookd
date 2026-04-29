@@ -1,0 +1,61 @@
+suite: role
+templates:
+  - templates/role.yaml
+release:
+  name: webhookd
+  namespace: webhookd
+set:
+  jsm.crIdentityProviderID: ci-test-idp
+  signing.createSecret: true
+  signing.secret: ci-test-secret
+tests:
+  - it: lands in the rbac.targetNamespace, not the release namespace
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: wiz-operator
+      - notEqual:
+          path: metadata.namespace
+          value: webhookd
+
+  - it: rbac.targetNamespace override is honored
+    set:
+      rbac.targetNamespace: custom-target
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: custom-target
+
+  - it: rbac.create=false skips rendering
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rules are exactly get/list/watch/patch on samlgroupmappings
+    asserts:
+      - equal:
+          path: rules[0].apiGroups
+          value:
+            - wiz.webhookd.io
+      - equal:
+          path: rules[0].resources
+          value:
+            - samlgroupmappings
+      - equal:
+          path: rules[0].verbs
+          value:
+            - get
+            - list
+            - watch
+            - patch
+
+  - it: rbac.targetNamespace empty is rejected by the values schema
+    set:
+      rbac.targetNamespace: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "rbac/targetNamespace.*minLength"

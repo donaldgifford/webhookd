@@ -1,0 +1,949 @@
+---
+id: IMPL-0003
+title: "Helm Chart and Release Pipeline Implementation"
+status: Complete
+author: Donald Gifford
+created: 2026-04-28
+---
+<!-- markdownlint-disable-file MD025 MD041 -->
+
+# IMPL 0003: Helm Chart and Release Pipeline Implementation
+
+**Status:** Complete
+**Author:** Donald Gifford
+**Date:** 2026-04-28
+
+<!--toc:start-->
+- [Objective](#objective)
+- [Scope](#scope)
+  - [In Scope](#in-scope)
+  - [Out of Scope](#out-of-scope)
+- [Implementation Phases](#implementation-phases)
+  - [Phase 0: Bootstrap & Toolchain](#phase-0-bootstrap--toolchain)
+    - [Tasks](#tasks)
+    - [Success Criteria](#success-criteria)
+  - [Phase 1: Core Templates (Always-On)](#phase-1-core-templates-always-on)
+    - [Tasks](#tasks-1)
+    - [Success Criteria](#success-criteria-1)
+  - [Phase 2: Optional / Gated Templates](#phase-2-optional--gated-templates)
+    - [Tasks](#tasks-2)
+    - [Success Criteria](#success-criteria-2)
+  - [Phase 3: Values Schema & Generated Docs](#phase-3-values-schema--generated-docs)
+    - [Tasks](#tasks-3)
+    - [Success Criteria](#success-criteria-3)
+  - [Phase 4: Chart CI Workflow](#phase-4-chart-ci-workflow)
+    - [Tasks](#tasks-4)
+    - [Success Criteria](#success-criteria-4)
+  - [Phase 5: Release Pipeline & Renovate](#phase-5-release-pipeline--renovate)
+    - [Tasks](#tasks-5)
+    - [Success Criteria](#success-criteria-5)
+  - [Phase 6: First Release & Smoke Verification](#phase-6-first-release--smoke-verification)
+    - [Tasks](#tasks-6)
+    - [Success Criteria](#success-criteria-6)
+  - [Phase 7: README Rewrite & Deprecation](#phase-7-readme-rewrite--deprecation)
+    - [Tasks](#tasks-7)
+    - [Success Criteria](#success-criteria-7)
+- [File Changes](#file-changes)
+- [Testing Plan](#testing-plan)
+- [Dependencies](#dependencies)
+- [Resolved Decisions](#resolved-decisions)
+- [References](#references)
+<!--toc:end-->
+
+## Objective
+
+Land DESIGN-0003 in eight focused phases: a `charts/webhookd/` Helm chart
+that fully replaces `deploy/rbac/` as the primary install path, plus the
+CI/CD pipeline that lints, tests, and publishes the chart to OCI on
+ghcr.io (primary) and gh-pages (mirror). Each phase is independently
+shippable as its own commit; the full set takes webhookd from
+"raw-manifest install" to "single `helm install` against a versioned
+chart published from this repo."
+
+**Implements:** [DESIGN-0003](../design/0003-helm-chart-and-release-pipeline-for-webhookd.md)
+
+## Scope
+
+### In Scope
+
+- A complete `charts/webhookd/` directory with all 11 templates the
+  design specifies (Deployment, Service, ServiceAccount, Role,
+  RoleBinding, Secret, ServiceMonitor, NetworkPolicy, PodDisruptionBudget,
+  CRD-precheck Job, NOTES + helpers).
+- `values.yaml` matching the design's flat per-provider schema, plus
+  a `values.schema.json` that enforces required-field cross-validation
+  (e.g. `jsm.crIdentityProviderID` required when `jsm.enabled=true`).
+- `helm-unittest` cases per template covering both the gated-on and
+  gated-off paths.
+- `chart-ci.yml` workflow on PRs touching `charts/**`: `helm lint`,
+  `helm-unittest`, `chart-testing` (`ct lint` + `ct install` against
+  kind with the wiz CRD pre-applied), and a `helm-docs` drift check.
+- `chart-release.yml` workflow on `workflow_dispatch` shipping the
+  same `.tgz` to OCI (`oci://ghcr.io/donaldgifford/charts/webhookd`)
+  and gh-pages atomically.
+- `.github/renovate.json` tracking `Chart.yaml`'s `appVersion` against
+  the webhookd binary's goreleaser tags.
+- README rewrite that flips primary deployment instructions to the
+  chart and demotes `deploy/rbac/` to a fixture-only label.
+- Helm tooling pinned in `mise.toml`: `helm`, `helm-unittest`,
+  `helm-docs`, `chart-testing` (`ct`), `chart-releaser` (`cr`).
+
+### Out of Scope
+
+- A `Chart.yaml` dependency on a wiz-operator chart. wiz-operator
+  hasn't published yet; the CRD-precheck Job is the substitute. When
+  wiz-operator publishes, swapping the precheck for a real dependency
+  is a follow-up (Phase 4 in the design's Migration Plan).
+- Multi-instance / multi-tenancy support in one Helm release.
+- A separate `webhookd-charts` repository. Chart lives under `charts/`
+  in this repo.
+- Bundling wiz-operator as a subchart.
+
+## Implementation Phases
+
+Each phase builds on the previous and ships as its own commit. A phase
+is complete when all tasks are checked and the success criteria are met.
+
+---
+
+### Phase 0: Bootstrap & Toolchain
+
+Establish the chart directory skeleton and pin the helm tooling so
+every subsequent phase has a reproducible local + CI environment.
+Nothing renders yet — this phase is purely structural.
+
+#### Tasks
+
+- [x] Add helm tooling to `mise.toml` (mirrors repo-guardian's
+      pin set; exact patch versions for reproducibility):
+  - [x] `helm = "3.19.0"`.
+  - [x] `kubectl = "1.31.4"` (matches `ENVTEST_K8S_VERSION` in Makefile).
+  - [x] `helm-cr = "1.8.1"` (chart-releaser CLI; used locally — CI uses
+        the action).
+  - [x] `helm-ct = "3.14.0"` (chart-testing CLI).
+  - [x] `helm-diff = "3.15.0"` (used by `make helm-diff-check`).
+  - [x] `helm-docs = "1.14.2"`.
+- [x] Add a `make chart-tools` Makefile target that runs
+      `helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3`
+      (helm-unittest is shipped as a helm plugin, not as a standalone
+      binary — same approach repo-guardian uses). Idempotent: re-runs
+      no-op once installed.
+- [x] Create `charts/webhookd/` directory.
+- [x] `charts/webhookd/.helmignore` (standard exclusions: `.git`,
+      `.github`, `*.md` outside chart, etc.).
+- [ ] **Pre-Phase-0 prerequisite:** cut a `v0.1.0` binary release
+      (`gh workflow run release.yml --ref main` after tagging) so the
+      chart's `appVersion: 0.1.0` matches a real published image.
+      Resolved Decision §1 — chart and binary versions stay aligned
+      for the first release. **Status:** chart pins `appVersion: 0.1.0`
+      ahead of the binary tag; user owns the release-time tag cut.
+- [x] `charts/webhookd/Chart.yaml` with `apiVersion: v2`, `name: webhookd`,
+      description, `type: application`, `version: 0.1.0`,
+      `appVersion: 0.1.0` (matches the freshly-cut binary tag),
+      `kubeVersion: ">=1.30.0"`, maintainers, sources, keywords,
+      icon URL, plus ArtifactHub annotations.
+- [x] `charts/webhookd/CHANGELOG.md` with a `## 0.1.0 - 2026-04-28`
+      entry seeded from this initial release. Resolved Decision §11 —
+      hand-curated per-chart changelog drives release-notes content.
+- [x] `charts/webhookd/values.yaml` skeleton with **all** the value
+      blocks from DESIGN-0003 §Values schema: `image`, `replicaCount`,
+      `podSecurityContext`, `securityContext`, `resources`,
+      `livenessProbe`, `readinessProbe`, `service`, `serviceAccount`,
+      `rbac`, `config`, `jsm`, `signing`, `metrics.serviceMonitor`,
+      `networkPolicy`, `podDisruptionBudget`, `crdPrecheck`,
+      `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`,
+      `imagePullSecrets`, `podAnnotations`, `podLabels`,
+      `nameOverride`, `fullnameOverride`. With helm-docs `# --` comments
+      on every leaf so Phase 3's README generation works incrementally.
+- [x] `charts/webhookd/templates/_helpers.tpl` with named templates:
+  - [x] `webhookd.name`
+  - [x] `webhookd.fullname`
+  - [x] `webhookd.chart`
+  - [x] `webhookd.labels`
+  - [x] `webhookd.selectorLabels`
+  - [x] `webhookd.serviceAccountName`
+  - [x] `webhookd.targetNamespace`
+  - [x] `webhookd.enabledProviders` (comma-joined list of provider
+        names whose `enabled=true`; today just `jsm`).
+  - [x] `webhookd.signingSecretName` / `webhookd.signingSecretKey`
+        (helpers added during Phase 0 to keep deployment.yaml DRY in
+        Phase 1).
+- [x] `charts/webhookd/templates/NOTES.txt` skeleton (URLs, signing-
+      header reminder, JSM-side webhook URL guidance, link to chart
+      README).
+- [x] `ct.yaml` at repo root (mirrors repo-guardian: `chart-dirs:
+      [charts]`, `target-branch: main`, `check-version-increment: false`,
+      `validate-maintainers: false`, `validate-chart-schema: false`,
+      `lint-conf: charts/.yamllint.yml`).
+- [x] `charts/.yamllint.yml` with the relaxations `ct lint` needs
+      (line-length disabled, `truthy: warning`).
+- [x] `charts/webhookd/ci/ci-values.yaml` empty placeholder (Phase 4
+      fills it).
+- [x] Update `Makefile` with `make helm-lint`, `make helm-test`,
+      `make helm-unittest`, `make helm-ct-lint`, `make helm-ct-install`,
+      `make helm-docs`, `make helm-docs-check`, `make helm-template`,
+      `make helm-package`, `make helm-push` targets (mirrors
+      repo-guardian's `helm-*` naming convention; supersedes the
+      original `chart-*` draft naming).
+- [x] Update CLAUDE.md with the chart layout note + `make helm-*`
+      target list.
+
+#### Success Criteria
+
+- `make helm-lint` (`helm lint charts/webhookd`) runs cleanly
+  (warnings allowed since no templates yet, but `Error` count = 0).
+  ✅ — `1 chart(s) linted, 0 chart(s) failed`.
+- `helm template charts/webhookd` renders nothing — `NOTES.txt` only
+  renders on install, not via `helm template`. ✅ — empty render.
+- `mise install` materializes all the new tools without manual steps.
+  ✅
+- `make helm-test` (lint + helm-unittest) is wired and `make helm-docs`
+  generates a default README. ✅
+- `git status` shows only the expected new files; no test-related
+  changes leaking in. ✅
+
+---
+
+### Phase 1: Core Templates (Always-On)
+
+The five always-on templates that produce a complete deploy parity
+against `deploy/rbac/` plus a working Deployment. These are the heart
+of the chart; gated templates come in Phase 2.
+
+#### Tasks
+
+- [x] `templates/deployment.yaml`:
+  - [x] Full Pod spec: `replicas`, `selector`, named container
+        `webhookd`, image from `.Values.image.{repository,tag,pullPolicy}`
+        with `appVersion` fallback for tag.
+  - [x] Two named container ports: `webhook` (`config.port`, default
+        8080) and `admin` (`config.adminPort`, default 9090).
+  - [x] `livenessProbe` + `readinessProbe` rendered from values, both
+        targeting the `admin` named port (Phase 1 of DESIGN-0001 only
+        ships `/healthz` on admin; `/readyz` is also on admin).
+  - [x] All core `WEBHOOK_*` env vars from `.Values.config.*`:
+        `WEBHOOK_ADDR`, `WEBHOOK_ADMIN_ADDR` (note: not
+        `WEBHOOK_PORT`/`_ADMIN_PORT` — actual env vars are bind
+        addresses, not bare ports; chart synthesizes `:<port>` from
+        the int values), `WEBHOOK_SHUTDOWN_TIMEOUT`,
+        `WEBHOOK_MAX_BODY_BYTES` (binary spelling, not
+        `BODY_MAX_BYTES`), `WEBHOOK_RATE_LIMIT_*`,
+        `WEBHOOK_TRACING_*` (with conditional `OTEL_EXPORTER_OTLP_ENDPOINT`
+        when tracing is on and `tracing.endpoint` is set),
+        `WEBHOOK_PPROF_ENABLED`, `WEBHOOK_PROVIDERS` (computed from
+        `webhookd.enabledProviders` helper), and `WEBHOOK_KUBECONFIG`
+        empty for in-cluster.
+  - [x] Provider env-var block guarded by `{{- if .Values.jsm.enabled }}`:
+        `WEBHOOK_JSM_*` and `WEBHOOK_CR_*` keys per IMPL-0002 config
+        layout. `crIdentityProviderID` rendered with `required` so
+        mis-config fails template-time.
+  - [x] `WEBHOOK_SIGNING_SECRET` from `secretKeyRef`, name resolved
+        per `.Values.signing.{createSecret,existingSecret}` via
+        `webhookd.signingSecretName` / `webhookd.signingSecretKey`
+        helpers.
+  - [x] `securityContext` rendered from values (default: read-only root
+        FS, run-as-non-root with uid/gid 65532, drop ALL capabilities,
+        no privilege escalation).
+  - [x] `volumeMounts` for `/tmp` emptyDir (read-only root FS forces
+        a writable tempdir for OTel batch processor + signal-handler
+        scratch).
+  - [x] `resources`, `nodeSelector`, `tolerations`, `affinity`,
+        `topologySpreadConstraints`, `imagePullSecrets`, `podAnnotations`,
+        `podLabels` all rendered from values.
+- [x] `templates/service.yaml`:
+  - [x] `type: {{ .Values.service.type }}` (default ClusterIP).
+  - [x] Two named service ports: `webhook` → `webhookPort` →
+        `webhook` targetPort, `admin` → `adminPort` → `admin`
+        targetPort.
+- [x] `templates/serviceaccount.yaml` gated on `serviceAccount.create=true`.
+- [x] `templates/role.yaml`:
+  - [x] Gated on `rbac.create=true`.
+  - [x] `metadata.namespace: {{ .Values.rbac.targetNamespace }}` so it
+        lands in `wiz-operator` (or override) regardless of release ns.
+  - [x] Rule: `apiGroups=[wiz.webhookd.io]`, `resources=[samlgroupmappings]`,
+        `verbs=[get, list, watch, patch]` (matches IMPL-0002 RBAC).
+- [x] `templates/rolebinding.yaml`:
+  - [x] Same gate, same target ns.
+  - [x] Subject: SA in `.Release.Namespace`; roleRef: matching Role.
+- [x] `templates/secret.yaml`:
+  - [x] Gated on `signing.createSecret=true`.
+  - [x] `data.webhookSecret: {{ .Values.signing.secret | b64enc | quote }}`,
+        with `required` enforcing presence; `helm.sh/resource-policy:
+        keep` annotation so a `helm uninstall` can't accidentally
+        delete the signing key out from under in-flight requests.
+- [x] `tests/deployment_test.yaml` — helm-unittest cases (16 tests):
+  - [x] Renders correct image (default = `Chart.AppVersion` fallback).
+  - [x] Custom `image.tag` overrides.
+  - [x] `replicaCount: 3` reflected in spec.
+  - [x] Provider env vars present when `jsm.enabled=true`.
+  - [x] `jsm.crIdentityProviderID=""` + `jsm.enabled=true` →
+        template error containing the `required` message.
+  - [x] `WEBHOOK_PROVIDERS` value matches enabled-providers helper
+        (and is empty when no providers enabled).
+  - [x] `signing.createSecret=true` + `signing.secret=foo` → secretKeyRef
+        points at the chart-local Secret.
+  - [x] `signing.createSecret=false` + `signing.existingSecret=foo` →
+        secretKeyRef points at `foo` with `existingSecretKey` honored;
+        `existingSecret=""` → template error.
+  - [x] securityContext and resources reflected per values.
+  - [x] livenessProbe / readinessProbe target the admin port by name.
+  - [x] Both named container ports declared.
+  - [x] `/tmp` emptyDir volume + mount present.
+- [x] `tests/service_test.yaml` (3 tests):
+  - [x] Default ClusterIP type, two named ports (`webhook`, `admin`).
+  - [x] `service.type: LoadBalancer` reflected.
+- [x] `tests/serviceaccount_test.yaml` (4 tests):
+  - [x] Created by default; `serviceAccount.create=false` skips.
+  - [x] `serviceAccount.name=foo` overrides; annotations propagate.
+- [x] `tests/role_test.yaml` (5 tests):
+  - [x] `metadata.namespace` equals `rbac.targetNamespace` value, not
+        release namespace.
+  - [x] `rbac.create=false` skips.
+  - [x] `rbac.targetNamespace=""` fails templating.
+  - [x] verbs are exactly `[get, list, watch, patch]`.
+- [x] `tests/rolebinding_test.yaml` (3 tests):
+  - [x] Subject namespace equals `.Release.Namespace`, not the
+        target namespace.
+  - [x] `rbac.create=false` skips.
+  - [x] roleRef points at the chart-rendered Role.
+- [x] `tests/secret_test.yaml` (3 tests):
+  - [x] `signing.createSecret=true` + `signing.secret=foo` →
+        Secret rendered with `webhookSecret` key + `keep` policy.
+  - [x] `signing.createSecret=false` → no Secret rendered.
+  - [x] `signing.createSecret=true` + `signing.secret=""` fails
+        templating.
+
+#### Success Criteria
+
+- `helm template charts/webhookd \
+    --set jsm.crIdentityProviderID=foo \
+    --set signing.createSecret=true \
+    --set signing.secret=bar \
+    -n webhookd` produces functionally-equivalent manifests to
+  `kubectl apply -k deploy/rbac/` plus a working Deployment. ✅
+- `helm install webhookd charts/webhookd -n webhookd --create-namespace` against
+  a kind cluster with `deploy/crds/samlgroupmapping.yaml` pre-applied
+  brings up a Pod that reaches `Ready=True`. ⏳ (validated in Phase 6
+  smoke test against a real cluster).
+- `helm-unittest charts/webhookd` passes all Phase 1 cases.
+  ✅ — 34 tests across 6 suites.
+- A POST to the deployed Pod's webhook URL with a signed JSM payload
+  produces a `SAMLGroupMapping` CR in `wiz-operator` namespace.
+  ⏳ (Phase 6 smoke test).
+- `make helm-ct-lint` clean. ✅
+
+---
+
+### Phase 2: Optional / Gated Templates
+
+The four feature-toggled templates plus the cluster-prerequisite
+hook. These are independent enough that each could ship in its own
+commit if Phase 1 lands first.
+
+#### Tasks
+
+- [x] `templates/servicemonitor.yaml`:
+  - [x] Gated on `metrics.serviceMonitor.enabled=true`.
+  - [x] Endpoint targets the `admin` named port, path `/metrics`.
+  - [x] `interval` and `scrapeTimeout` from values.
+  - [x] Extra labels from `metrics.serviceMonitor.labels` for
+        Prometheus Operator selectors.
+- [x] `templates/networkpolicy.yaml`:
+  - [x] Gated on `networkPolicy.enabled=true`.
+  - [x] Default-deny ingress; allow on the webhook + admin ports
+        from `networkPolicy.ingress.fromCIDRs` and
+        `networkPolicy.ingress.fromNamespaces`.
+- [x] `templates/poddisruptionbudget.yaml`:
+  - [x] Gated on `podDisruptionBudget.enabled=true`.
+  - [x] `minAvailable` OR `maxUnavailable` (mutually exclusive); template
+        validation on values via `fail`.
+- [x] `templates/crd-precheck-job.yaml` package — four resources behind
+      one `crdPrecheck.enabled=true` gate (default on):
+  - [x] ClusterRole granting `get` on `customresourcedefinitions.apiextensions.k8s.io`,
+        with `helm.sh/hook: pre-install,pre-upgrade`,
+        `helm.sh/hook-weight: -10`,
+        `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`.
+  - [x] ServiceAccount in release namespace + ClusterRoleBinding,
+        also pre-install/pre-upgrade with weight `-9`.
+  - [x] Job with weight `-5`, `backoffLimit: 0`, `ttlSecondsAfterFinished: 60`,
+        running `kubectl` from
+        `cgr.dev/chainguard/kubectl:latest-dev` (Resolved Decision §4 —
+        Chainguard distroless, signed, supply-chain hardened); image
+        repo + tag exposed via `crdPrecheck.image.{repository,tag}` so
+        air-gapped users can override. Job command loops over
+        `.Values.crdPrecheck.required` and exits non-zero with a
+        descriptive error if any CRD is absent.
+- [x] `tests/servicemonitor_test.yaml` (3 tests):
+  - [x] Default → not rendered.
+  - [x] `metrics.serviceMonitor.enabled=true` → rendered with admin
+        port endpoint.
+  - [x] `metrics.serviceMonitor.labels` propagated.
+- [x] `tests/networkpolicy_test.yaml` (4 tests):
+  - [x] Default → not rendered.
+  - [x] `networkPolicy.enabled=true` + sample CIDRs → ingress rule
+        contains them.
+  - [x] `fromNamespaces` selectors expand into namespaceSelector peers.
+- [x] `tests/poddisruptionbudget_test.yaml` (4 tests):
+  - [x] Default → not rendered.
+  - [x] `podDisruptionBudget.enabled=true` → rendered with default
+        `minAvailable: 1`.
+  - [x] `maxUnavailable` mode renders only that field.
+  - [x] Setting both `minAvailable` and `maxUnavailable` → template
+        error.
+- [x] `tests/crd-precheck-job_test.yaml` (5 tests):
+  - [x] Default (`crdPrecheck.enabled=true`) → all four resources
+        rendered with correct hook annotations and weights.
+  - [x] `crdPrecheck.enabled=false` → none rendered.
+  - [x] `crdPrecheck.required=[a,b,c]` → all listed CRDs appear in the
+        Job's command args.
+  - [x] Empty `crdPrecheck.required` → template error.
+  - [x] `crdPrecheck.image` override is honored.
+
+#### Success Criteria
+
+- `helm template charts/webhookd --set metrics.serviceMonitor.enabled=true ...`
+  renders the ServiceMonitor; default does not. ✅
+- `helm install` against kind with `crdPrecheck.enabled=true` and the
+  required CRD present succeeds; `helm install` with the required CRD
+  *absent* fails the pre-install hook with a clear error and never
+  applies the chart's other manifests. ⏳ (Phase 6 smoke test).
+- All Phase 2 helm-unittest cases pass. ✅ — 16 new tests across
+  4 suites; 50 total chart tests across 10 suites.
+
+---
+
+### Phase 3: Values Schema & Generated Docs
+
+Lock the values contract via JSON schema validation and start the
+README.md.gotmpl pipeline so chart README stays in sync.
+
+#### Tasks
+
+- [x] `charts/webhookd/values.schema.json`:
+  - [x] Type validation for every key in `values.yaml`.
+  - [x] Required-field cross-validation:
+    - [x] `jsm.crIdentityProviderID` required (non-empty string) when
+          `jsm.enabled=true` (via `if/then` + `minLength: 1`).
+    - [x] `signing.existingSecret` required when `signing.createSecret=false`
+          (via `oneOf` branch enforcing `existingSecret` minLength≥1).
+    - [x] `signing.secret` required when `signing.createSecret=true`
+          (other `oneOf` branch).
+    - [x] `crdPrecheck.required` non-empty (`minItems: 1`) when
+          `crdPrecheck.enabled=true`.
+    - Note: PDB minAvailable/maxUnavailable mutual exclusion is
+      enforced at template-time via `fail` (Phase 2) since JSON Schema
+      can't naturally express "exactly one of". The fail-message check
+      is covered by `tests/poddisruptionbudget_test.yaml`.
+  - [x] `additionalProperties: false` at every object level so typos
+        in `--set` paths fail loudly.
+- [x] Add helm-docs `# --` annotations to every leaf in `values.yaml`
+      (groundwork done in Phase 0; values.yaml audit confirms every
+      leaf has the comment).
+- [x] `charts/webhookd/README.md.gotmpl` mirroring repo-guardian's:
+      header, install snippets (OCI + gh-pages), multi-tenant install
+      pattern, observability config, hardening notes (NetworkPolicy +
+      PDB + ServiceMonitor toggles), CRD prerequisite, signing-secret
+      patterns, troubleshooting. Includes
+      `{{ template "chart.valuesSection" . }}`.
+- [x] Run `helm-docs` locally; commit the generated
+      `charts/webhookd/README.md`.
+- [x] Schema-rejection coverage at `make helm-lint` time:
+  - [x] `--set jsm.enabled=true --set jsm.crIdentityProviderID=""` →
+        rejected (`minLength: got 0, want 1`).
+  - [x] `--set signing.createSecret=false --set signing.existingSecret=""` →
+        rejected (`oneOf` branches both fail).
+  - [x] `--set unknownKey=foo` → rejected
+        (`additional properties 'foobar' not allowed`).
+  - [x] Empty `crdPrecheck.required` → rejected (`minItems: got 0, want 1`).
+- [x] `make helm-docs-check` re-runs helm-docs and
+      `git diff --exit-code charts/webhookd/README.md`, so missing a
+      regen fails locally before CI catches it. Wired in Phase 0.
+- [x] `make helm-lint` updated to consume `ci/ci-values.yaml` so the
+      lint target satisfies the schema's required signing-secret
+      branch without coercing default values.
+
+#### Success Criteria
+
+- `helm lint charts/webhookd -f ci/ci-values.yaml` against valid values
+  succeeds; against any of the schema-violating inputs (empty
+  `jsm.crIdentityProviderID`, empty `signing.existingSecret` with
+  `createSecret=false`, unknown top-level key, empty
+  `crdPrecheck.required`), fails with a schema-validation error
+  citing the offending JSON pointer. ✅
+- `make helm-docs-check` produces no diff vs. the committed README.md.
+  ✅
+- `charts/webhookd/README.md` rendered cleanly: every value block has
+  a description, default, and type column. ✅
+- `make helm-test` and `make helm-ct-lint` clean. ✅ — 50 unit tests
+  across 10 suites; ct lint succeeds.
+
+---
+
+### Phase 4: Chart CI Workflow
+
+CI gating so chart changes can't merge without lint, unit tests, an
+end-to-end install on kind, and a docs-drift check.
+
+#### Tasks
+
+- [x] `charts/webhookd/ci/ci-values.yaml` populated (in Phase 3 — see
+      file at HEAD):
+  - [x] `jsm.crIdentityProviderID: ci-test-idp` (satisfies required-field).
+  - [x] `signing.createSecret: true` + `signing.secret: ci-test-secret`.
+  - [x] `rbac.targetNamespace: ct-target` (so the kind cluster can
+        pre-create that ns + the CRD).
+- [x] `.github/workflows/chart-ci.yml`:
+  - [x] Trigger: `pull_request` on `paths: [charts/**, ct.yaml,
+        .github/workflows/chart-ci.yml]`.
+  - [x] `lint` job: `helm lint charts/webhookd -f ci/ci-values.yaml`
+        (so schema's signing-secret branch is satisfied; default
+        values.yaml fails schema by design).
+  - [x] `unittest` job: `helm-unittest/helm-unittest-action@v2`.
+  - [x] `ct` job:
+    - [x] `helm/chart-testing-action@v2` with python setup.
+    - [x] `ct list-changed --config ct.yaml` to skip on no-op PRs.
+    - [x] `ct lint --config ct.yaml`.
+    - [x] `helm/kind-action@v1` for cluster.
+    - [x] `kubectl create namespace ct-target` before install.
+    - [x] `kubectl apply -f deploy/crds/samlgroupmapping.yaml` so the
+          CRD-precheck Job passes.
+    - [x] `ct install --config ct.yaml` runs the install end-to-end.
+  - [x] `docs-drift` job: `losisin/helm-docs-github-action@v1` with
+        `fail-on-diff: true`. Folds the original `helm-docs.yml`
+        proposal into a single workflow file.
+- [x] `.github/labeler.yml` (existing, consumed by ci.yml's
+      `actions/labeler@v6` job) gains a `chart` label rule on
+      `charts/**` and `ct.yaml` paths. Resolved Decision §10 —
+      path-based mirrors webhookd's existing convention.
+- [x] Smoke-test the workflow locally:
+  - [x] `actionlint .github/workflows/chart-ci.yml` clean.
+  - [x] `make helm-test`, `make helm-ct-lint`, `make helm-docs-check`
+        all pass against the same ci-values path the workflow uses.
+
+#### Success Criteria
+
+- A PR that touches `charts/webhookd/templates/deployment.yaml` triggers
+  `chart-ci.yml`; all four jobs (lint, unittest, ct, docs-drift) run.
+  ✅ — wired; will run on this branch's first chart-touching PR.
+- `ct install` against kind succeeds end-to-end with the
+  `ci-values.yaml` overrides. ⏳ — runs in CI on PR push.
+- Removing a `# --` annotation from `values.yaml` without re-running
+  `helm-docs` produces a CI failure on the `docs-drift` job. ✅ —
+  configured via `fail-on-diff: true`.
+
+---
+
+### Phase 5: Release Pipeline & Renovate
+
+The chart is now releasable. Wire publishing to OCI on ghcr.io as the
+primary distribution and gh-pages as a parallel mirror, plus Renovate
+for automatic `appVersion` tracking.
+
+#### Tasks
+
+- [x] `.github/workflows/chart-release.yml`:
+  - [x] Trigger: `workflow_dispatch` with a required `chart-version`
+        input (must match `Chart.yaml` `version:`; the `release-oci`
+        job verifies first to fail fast on a typo).
+  - [x] `release-oci` job permissions: `packages: write` for OCI push.
+    - [x] `helm registry login ghcr.io` with `${{ github.actor }}` +
+          `${{ secrets.GITHUB_TOKEN }}`.
+    - [x] `helm package charts/webhookd -d /tmp/charts`.
+    - [x] `helm push /tmp/charts/webhookd-*.tgz oci://ghcr.io/donaldgifford/charts`.
+  - [x] `release-gh-pages` job permissions: `contents: write` for
+        gh-pages branch.
+    - [x] `needs: release-oci` so a failed OCI push blocks the
+          gh-pages mirror.
+    - [x] `helm/chart-releaser-action@v1` with `charts_dir: charts`,
+          `skip_existing: true`, `CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
+          Resolved Decision §7 — let the action create the orphan
+          `gh-pages` branch on first run; no pre-seed step.
+  - [x] Release-notes step extracts the latest entry from
+        `charts/webhookd/CHANGELOG.md` via
+        `awk '/^## /{n++} n==1{print} n==2{exit}'` and passes it
+        to chart-releaser-action via the `CR_RELEASE_NOTES_FILE`
+        env. Resolved Decision §11 — per-chart hand-written CHANGELOG
+        drives release notes; no git-cliff coupling.
+  - [x] `cr.yaml` at repo root tells chart-releaser to use the
+        external release-notes file.
+- [x] `.github/renovate.json`:
+  - [x] Extends `config:recommended` + `:dependencyDashboard` +
+        `:semanticCommits` + `schedule:earlyMondays`.
+  - [x] `helm-values` and `helmv3` managers wired against
+        `charts/.+/values\.yaml$` and `charts/.+/Chart\.yaml$`.
+  - [x] Custom regex manager watches `donaldgifford/webhookd`
+        github-releases and bumps `charts/webhookd/Chart.yaml`'s
+        `appVersion` field.
+  - [x] Package rule groups helm-* mise.toml updates into one PR.
+  - [x] Package rule auto-merges patch bumps to the helm-* CI actions
+        (azure/setup-helm, helm/chart-releaser-action, etc.).
+- [x] OCI registry visibility flip stays in Phase 6 (one-time manual
+      step after the very first push — Resolved Decision §8).
+- [x] Sigstore / cosign signing of the `.tgz` is **deferred** to a
+      follow-up (Resolved Decision §9). `cr.yaml` sets `sign: false`
+      explicitly. README's install instructions do not advertise
+      `--verify` for v0.1.0.
+
+#### Success Criteria
+
+- `gh workflow run chart-release.yml` against the merged feat branch
+  publishes `webhookd-0.1.0.tgz` to **both** OCI and gh-pages.
+  ⏳ — fires in Phase 6 against a real cluster.
+- `helm pull oci://ghcr.io/donaldgifford/charts/webhookd --version 0.1.0`
+  succeeds from a fresh machine without auth (after Phase 6's
+  one-time visibility flip). ⏳
+- `helm repo add webhookd https://donaldgifford.github.io/webhookd`
+  resolves; `helm search repo webhookd` returns chart 0.1.0. ⏳
+- Renovate opens a PR within 24h of a hypothetical `v0.0.3` binary tag,
+  bumping `Chart.yaml`'s `appVersion`. ⏳ — once Renovate is enabled
+  on the repo.
+- `actionlint .github/workflows/chart-release.yml` clean. ✅
+- `jq . .github/renovate.json` parses cleanly. ✅
+
+---
+
+### Phase 6: First Release & Smoke Verification
+
+Cut chart 0.1.0 against a fresh kind cluster end-to-end via both
+install paths.
+
+#### Tasks
+
+- [x] Document the smoke-test commands and one-time setup in
+      `docs/runbook/release-checklist.md` — pre-flight, release,
+      one-time visibility flip, OCI smoke, gh-pages smoke, cleanup
+      verification, rollback steps.
+- [x] **Local structural smoke test on kind** (image substitution
+      since `ghcr.io/donaldgifford/webhookd:0.1.0` doesn't exist
+      yet — Resolved Decision §1 binary-tag prerequisite is
+      post-merge):
+  - [x] `kind create cluster --name webhookd-smoke`.
+  - [x] `kubectl apply -f deploy/crds/samlgroupmapping.yaml`.
+  - [x] `kubectl create namespace {webhookd,wiz-operator,ct-target}`.
+  - [x] `helm install webhookd ./charts/webhookd -n webhookd
+        -f charts/webhookd/ci/ci-values.yaml --set
+        image.repository=registry.k8s.io/pause --set image.tag=3.10`
+        succeeds.
+  - [x] CRD-precheck Job runs successfully — pulled
+        `cgr.dev/chainguard/kubectl:latest-dev`, executed against
+        the kind apiserver, exited 0 (CRD present), and was
+        cleaned up by `hook-delete-policy: hook-succeeded`.
+  - [x] All chart resources apply: Deployment, Service (with both
+        named ports), ServiceAccount in `webhookd` ns, Role +
+        RoleBinding in `ct-target` ns (cross-namespace plumbing
+        verified), Secret with the signing key.
+  - [x] Pod is scheduled (CrashLoopBackOff with pause:3.10 is
+        expected — pause has no admin/healthz endpoint; this only
+        verifies image-pull + Pod admission + probe wiring).
+  - [x] `helm uninstall webhookd -n webhookd` removes everything
+        except the signing Secret (intentional — `helm.sh/
+        resource-policy: keep`). No orphaned Role, RoleBinding,
+        or hook ClusterRole/SA.
+  - [x] `kind delete cluster --name webhookd-smoke`.
+
+The remaining Phase 6 items are **manual post-merge steps**, gated
+behind:
+
+1. The `feat/helm-chart` branch landing on `main` via PR.
+2. The user cutting `v0.1.0` binary release first
+   (Resolved Decision §1).
+
+Once those happen, run through `docs/runbook/release-checklist.md`
+top-to-bottom:
+
+- [ ] Verify `v0.1.0` binary tag and ghcr.io image exist before
+      releasing the chart.
+- [ ] `gh workflow run chart-release.yml --ref main --field chart-version=0.1.0`.
+- [ ] **One-time** ghcr.io package visibility flip after the first
+      OCI push: navigate to
+      `https://github.com/users/donaldgifford/packages/container/charts%2Fwebhookd/settings`
+      and change visibility from Private → Public. Resolved
+      Decision §8.
+- [ ] **Live** OCI install smoke test on a fresh kind cluster
+      against the chart published from ghcr.io (the local smoke
+      above used `helm install ./charts/webhookd` directly).
+- [ ] **Live** gh-pages install smoke test on a separate kind cluster.
+
+#### Success Criteria
+
+- Local install on kind succeeds end-to-end: chart applies, RBAC
+  lands cross-namespace, precheck hook runs and is cleaned up,
+  Pod is scheduled. ✅ — verified locally with image substitution
+  (binary `v0.1.0` doesn't exist yet).
+- Both **live** install paths (OCI + gh-pages) succeed against a
+  fresh cluster with the published `v0.1.0` image; Pod reaches
+  Ready; webhook produces a CR. ⏳ — gated on user cutting v0.1.0
+  binary tag (Resolved Decision §1).
+- `helm uninstall` leaves zero residue (no orphaned Role,
+  RoleBinding, or precheck SA/ClusterRole). ✅ — verified locally;
+  only the signing Secret survives by design (`helm.sh/resource-
+  policy: keep`).
+- `docs/runbook/release-checklist.md` is the one place future-us
+  re-runs to verify a release. ✅
+
+---
+
+### Phase 7: README Rewrite & Deprecation
+
+Flip the user-facing install story to chart-first; demote `deploy/rbac/`
+to fixture-only.
+
+#### Tasks
+
+- [x] `README.md` "Deployment" section rewritten:
+  - [x] Leads with the OCI install snippet
+        (`oci://ghcr.io/donaldgifford/charts/webhookd`).
+  - [x] Shows the gh-pages alternative immediately below.
+  - [x] Cross-links DESIGN-0003 + IMPL-0003 and the chart's own
+        README.
+  - [x] Removes the `kubectl apply -k deploy/rbac/` instructions;
+        replaces with a "Raw manifests (envtest fixtures only)"
+        pointer.
+- [x] `deploy/rbac/*.yaml` headers updated with the banner comment:
+      `# DEPLOY/RBAC IS A TEST FIXTURE, NOT THE PRODUCTION INSTALL
+      PATH. Production installs use the Helm chart at charts/webhookd/.`
+- [x] `deploy/crds/*.yaml` headers stay as-is (already labeled
+      fixture-only from IMPL-0002).
+- [x] CLAUDE.md project state paragraph extended incrementally
+      across Phases 0–6 (each phase commit added a paragraph
+      pointing at its deliverables).
+- [x] DESIGN-0003 status flipped to `Implemented`.
+- [x] This doc's status flipped to `Complete`.
+
+#### Success Criteria
+
+- A new contributor reading the README can install webhookd with one
+  `helm install` command in under 60 seconds (assuming kind +
+  wiz-operator's CRD). ✅ — `helm install oci://...` snippet is the
+  first thing in the Deployment section.
+- `kubectl apply -k deploy/rbac/` no longer appears as the primary path
+  anywhere in user-facing docs. ✅ — moved to "Raw manifests (envtest
+  fixtures only)" sub-section with a banner comment in the YAML.
+- Doc indexes (`docs/design/README.md`, `docs/impl/README.md`) reflect
+  Implemented / Complete status. ✅ (after `docz update`).
+
+---
+
+## File Changes
+
+| File | Action | Description |
+|------|--------|-------------|
+| `mise.toml` | Modify | Pin helm + helm-unittest + helm-docs + chart-testing + chart-releaser. |
+| `Makefile` | Modify | Add `chart-lint`, `chart-test`, `chart-docs` targets. |
+| `ct.yaml` | Create | Repo-root chart-testing config. |
+| `charts/.yamllint.yml` | Create | Yamllint relaxations for chart-testing. |
+| `charts/webhookd/Chart.yaml` | Create | Chart metadata, version, appVersion. |
+| `charts/webhookd/CHANGELOG.md` | Create | Per-chart hand-curated changelog; release notes source. |
+| `charts/webhookd/.helmignore` | Create | Standard helm exclusions. |
+| `charts/webhookd/values.yaml` | Create | Full values schema with helm-docs annotations. |
+| `charts/webhookd/values.schema.json` | Create | JSON schema with type + cross-field validation. |
+| `charts/webhookd/README.md.gotmpl` | Create | Helm-docs source. |
+| `charts/webhookd/README.md` | Create | Generated by helm-docs. |
+| `charts/webhookd/ci/ci-values.yaml` | Create | `ct install` overrides. |
+| `charts/webhookd/templates/_helpers.tpl` | Create | Named templates incl. `enabledProviders`. |
+| `charts/webhookd/templates/NOTES.txt` | Create | Post-install hints. |
+| `charts/webhookd/templates/deployment.yaml` | Create | Full Pod spec, env vars, probes. |
+| `charts/webhookd/templates/service.yaml` | Create | Two named ports. |
+| `charts/webhookd/templates/serviceaccount.yaml` | Create | SA in release ns (gated). |
+| `charts/webhookd/templates/role.yaml` | Create | Role in target ns (cross-ns). |
+| `charts/webhookd/templates/rolebinding.yaml` | Create | RoleBinding in target ns. |
+| `charts/webhookd/templates/secret.yaml` | Create | Inline-create signing secret (gated). |
+| `charts/webhookd/templates/servicemonitor.yaml` | Create | Prometheus Operator (gated). |
+| `charts/webhookd/templates/networkpolicy.yaml` | Create | Default-deny + allow CIDRs (gated). |
+| `charts/webhookd/templates/poddisruptionbudget.yaml` | Create | PDB (gated). |
+| `charts/webhookd/templates/crd-precheck-job.yaml` | Create | Pre-install hook + SA + ClusterRole. |
+| `charts/webhookd/tests/*_test.yaml` | Create | helm-unittest cases per template. |
+| `.github/workflows/chart-ci.yml` | Create | Lint + unittest + ct + helm-docs drift. |
+| `.github/workflows/chart-release.yml` | Create | OCI + gh-pages publishing. |
+| `.github/workflows/helm-docs.yml` | Create | Drift check on values changes. |
+| `.github/workflows/pr-labels.yml` | Modify | Add `chart` label rule. |
+| `.github/renovate.json` | Create | appVersion tracking against goreleaser tags. |
+| `README.md` | Modify | Helm-first install instructions. |
+| `deploy/rbac/*.yaml` | Modify | Banner comment marking fixture-only. |
+| `docs/runbook/release-checklist.md` | Create | Smoke-test commands captured. |
+| `docs/design/0003-...md` | Modify | Status → Implemented at the end. |
+| `CLAUDE.md` | Modify | Phase 3 entry + chart patterns. |
+
+## Testing Plan
+
+- **Helm template + lint** — `helm lint charts/webhookd` clean; `helm
+  template charts/webhookd ...` produces parseable YAML for every
+  combination of value toggles documented in DESIGN-0003.
+- **helm-unittest** — at least one case per template, covering both
+  the gated-on and gated-off paths plus the `required` failure modes
+  for each conditionally-required value. Run via `make chart-test`
+  and CI.
+- **chart-testing** — `ct install` against kind in CI on every PR
+  touching `charts/**`. CRD pre-applied from `deploy/crds/`.
+  `ct.yaml` keeps lint config close to repo-guardian's defaults.
+- **End-to-end smoke** — Phase 6 manual test plan against a fresh
+  kind cluster for both OCI and gh-pages install paths. Captured in
+  `docs/runbook/release-checklist.md` for repeatability.
+- **Schema validation** — invalid values (`jsm.crIdentityProviderID=""`
+  with `jsm.enabled=true`, `signing.existingSecret=""` with
+  `signing.createSecret=false`, unknown top-level keys) all fail
+  `helm install --dry-run` with schema errors.
+- **Precheck hook behavior** — install against a cluster missing the
+  CRD fails the pre-install hook with a clear error and applies
+  no other manifests; install with `crdPrecheck.enabled=false`
+  succeeds even without the CRD (then CrashLoops on first webhook,
+  as documented).
+- **Renovate dry-run** — first PR that lands renovate config also
+  triggers a dependency-dashboard issue we can sanity-check.
+
+## Dependencies
+
+- **Helm 3.13+** — chart `apiVersion: v2` and OCI publishing both
+  need 3.13 or newer. Pinning **3.19.0** exact in `mise.toml`
+  (Resolved Decision §2 — exact patch versions across all helm
+  tooling for reproducibility).
+- **`samlgroupmappings.wiz.webhookd.io` CRD** — Phase 1 onward.
+  Existing fixture at `deploy/crds/samlgroupmapping.yaml` from
+  IMPL-0002 is the install-time source of truth.
+- **goreleaser tag `v0.1.0`** — must be cut **before** Phase 0
+  (Resolved Decision §1). Chart `appVersion: 0.1.0` references the
+  resulting `ghcr.io/donaldgifford/webhookd:0.1.0` image. Renovate's
+  `appVersion` tracking takes over for subsequent binary tags
+  (`v0.1.1`, `v0.2.0`, …).
+- **GitHub repo settings:**
+  - Pages enabled with source `gh-pages` branch (chart-releaser-action
+    needs this).
+  - Packages permission for OCI push to ghcr.io (needs `packages:
+    write` in workflow + first push must be from a maintainer to
+    create the package; subsequent pushes work via `GITHUB_TOKEN`).
+- **kind / chart-testing / helm-unittest** — pinned in `mise.toml`
+  Phase 0; CI uses official actions for the same versions.
+
+## Resolved Decisions
+
+Drafted as Open Questions; resolved with the user 2026-04-28 before
+Phase 0 starts. Cascading consequences from each decision are applied
+to the body above in the same pass — no Resolved Decision contradicts
+the phase tasks.
+
+1. **First-release `appVersion`: cut `v0.1.0` binary first.** Chart
+   `0.1.0` ships against `appVersion: 0.1.0` — same number on both
+   sides. **Reasoning:** version skew at v0.0.x for the first release
+   is the kind of subtle thing that breeds confusion later (which
+   chart pinned which binary?), and it costs us a single binary tag
+   to avoid it. The pre-1.0 divergence allowance from
+   DESIGN-0003 §Resolved-Decision §8 stays in effect for *future*
+   chart-only bumps; we just don't *start* with a divergence.
+   **Cascading:** Phase 0 gains a "cut v0.1.0 binary" prerequisite
+   task; Phase 6 first-step verifies the binary tag exists; the
+   Dependencies section calls out the binary tag as a hard
+   precondition.
+
+2. **Helm tooling versions: exact patch pins.** `helm = 3.19.0`,
+   `helm-cr = 1.8.1`, `helm-ct = 3.14.0`, `helm-diff = 3.15.0`,
+   `helm-docs = 1.14.2`, `kubectl = 1.31.4`, helm-unittest plugin =
+   `1.0.3`. **Reasoning:** the rest of `mise.toml` already pins exact
+   patch versions (Go, golangci-lint, etc.) — consistency wins over
+   "let mise pick latest." Renovate updates these via PRs same as the
+   Go toolchain pins. Pin set was validated against the contributor's
+   pre-existing global mise install.
+
+3. **Helm tooling distribution: mirror repo-guardian.** mise pins the
+   five helm-* binaries (`helm`, `helm-cr`, `helm-ct`, `helm-diff`,
+   `helm-docs`); helm-unittest installs as a *helm plugin* via
+   `make chart-tools`. **Reasoning:** repo-guardian's split is the
+   path of least resistance — helm-unittest's upstream distribution
+   *is* a helm plugin (no standalone binary), and mise doesn't
+   manage helm plugins. The Makefile bootstrap target keeps the
+   command discoverable. **Cascading:** Phase 0 mise pins updated;
+   `make chart-tools` task added; mise install hooks call it so a
+   fresh checkout doesn't pay the install cost twice.
+
+4. **CRD-precheck image: Chainguard.** `cgr.dev/chainguard/kubectl:latest-dev`
+   exposed via `crdPrecheck.image.{repository,tag}` for air-gapped
+   override. **Reasoning:** distroless + signed + maintained;
+   Bitnami's public-registry deprecation makes `bitnami/kubectl`
+   risky for a year-out workload, and `registry.k8s.io/kubectl`
+   isn't actually a thing (the registry hosts kubelet/kube-proxy,
+   not a `kubectl` image). Chainguard is the same supply-chain
+   posture we'd want once we adopt cosign/sigstore (Resolved
+   Decision §9 follow-up).
+
+5. **OCI path: `oci://ghcr.io/donaldgifford/charts/webhookd`** — the
+   drafted form. **Reasoning:** the `/charts/` segment cleanly
+   separates chart packages from binary images
+   (`ghcr.io/donaldgifford/webhookd` would collide with the existing
+   container image namespace), and the slight learning cost is one
+   `--repo` flag in install instructions.
+
+6. **`helm-docs.yml` failure mode: fail with "run `make chart-docs`."**
+   **Reasoning:** option (a) — auto-commit bots need a PAT and add
+   moving parts; the helm-docs invocation is identical to what
+   contributors run via `make chart-docs`, so the failure message
+   literally tells them the fix. We can graduate to auto-commit
+   later if the friction proves real.
+
+7. **`gh-pages` init: trust chart-releaser-action.** No pre-seeded
+   placeholder branch. **Reasoning:** the action's `--gh-pages`
+   handling does work the first time according to recent issues —
+   if it doesn't, the failure mode is loud (release job red) and
+   fixable with a 30-second manual orphan-branch creation. Not worth
+   pre-empting.
+
+8. **ghcr.io visibility: one-time manual flip.** First OCI push
+   creates the package as private; toggle to public via the package
+   settings page once. **Reasoning:** `gh api
+   /user/packages/container/charts%2Fwebhookd/visibility` works but
+   requires a PAT with `write:packages` scope (default
+   `GITHUB_TOKEN` can't change package visibility). One-time manual
+   click beats stashing a PAT for a single use. **Cascading:**
+   Phase 5 release-workflow tasks lose the visibility-flip subtask;
+   Phase 6 first-release gains an explicit one-time visibility-flip
+   task.
+
+9. **Sigstore / cosign: deferred.** Not in v0.1.0; tracked as
+   follow-up. **Reasoning:** the chart's threat model is "verify the
+   contents match what GitHub Actions produced." Sigstore would add
+   that proof, but we don't sign the *binary* image either yet, so
+   doing only the chart is asymmetric. Earn back the time later
+   when we sign both.
+
+10. **`pr-labels.yml`: path-based.** Rule fires on
+    `paths-ignore: []`, `paths: [charts/**, ct.yaml,
+    charts/.yamllint.yml]`. **Reasoning:** webhookd's existing
+    pr-labels rules are all path-based, not branch-name-based. Stay
+    consistent — branch-name heuristics rot the moment someone uses
+    a non-conventional branch name.
+
+11. **Release notes: per-chart `CHANGELOG.md`.** `charts/webhookd/CHANGELOG.md`
+    is hand-written; the release workflow extracts the latest entry
+    and feeds it to `chart-releaser-action`. **Reasoning:** the
+    binary release uses git-cliff for *commit-derived* notes; the
+    chart's audience cares about *user-visible* changes (values
+    schema breaks, default flips, new gates) which don't always
+    map to commit messages. A hand-curated CHANGELOG forces the
+    author to think through the user-visible delta. **Cascading:**
+    Phase 0 creates the file with a `## 0.1.0` seed entry; Phase 5
+    release workflow gains a release-notes-extraction step;
+    File Changes table adds the CHANGELOG row.
+
+12. **Local `make chart-test` against kind.** Same runtime as CI.
+    **Reasoning:** envtest's `apiextensions.k8s.io/v1` gap is a real
+    blocker (the CRD-precheck Job needs the CRD API), and
+    "fast locally / different in CI" creates exactly the kind of
+    Heisenbug the Phase 4 e2e is meant to prevent. Use the same
+    tool both places.
+
+## References
+
+- **Implements:** [DESIGN-0003](../design/0003-helm-chart-and-release-pipeline-for-webhookd.md).
+- **Reference implementation:**
+  [donaldgifford/repo-guardian](https://github.com/donaldgifford/repo-guardian) —
+  source for chart layout, workflows, `ct.yaml`, `renovate.json`.
+- **Helm tooling:**
+  - [chart-releaser-action](https://github.com/helm/chart-releaser-action)
+  - [chart-testing](https://github.com/helm/chart-testing) (`ct lint`, `ct install`)
+  - [helm-unittest](https://github.com/helm-unittest/helm-unittest)
+  - [helm-docs](https://github.com/norwoodj/helm-docs)
+  - [Helm OCI registry support](https://helm.sh/docs/topics/registries/)
+- **Webhookd context:**
+  - DESIGN-0001 / IMPL-0001 — env-var matrix the chart maps to.
+  - DESIGN-0002 / IMPL-0002 — RBAC verbs, target namespace, CRD
+    name (`samlgroupmappings.wiz.webhookd.io`).
+  - ADR-0007 — trace-id annotation; relevant when chart enables
+    `config.tracing.*`.

@@ -1,0 +1,10 @@
+# Minimal-valid override set — satisfies values.schema.json and exercises
+# the default install path. `make helm-lint` and `chart-testing` both
+# consume this file.
+jsm:
+  crIdentityProviderID: ci-test-idp
+signing:
+  createSecret: true
+  secret: ci-test-secret
+rbac:
+  targetNamespace: ct-target
