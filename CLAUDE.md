@@ -111,6 +111,7 @@ Recurring lint gotchas in this repo (all hit during IMPL-0001):
 - **`charts/.yamllint.yml` truthy rule needs the dict form.** `truthy: warning` errors with `should be either "enable", "disable" or a dict`. The correct form is `truthy: { level: warning }` (or the YAML expansion). yamllint's docs are misleading here.
 - **OCI path: `oci://ghcr.io/donaldgifford/charts/<chart>` not `oci://ghcr.io/donaldgifford/<chart>`.** ghcr.io shares the namespace between container images and OCI charts; the `/charts/` prefix segment cleanly separates them so the binary image at `ghcr.io/donaldgifford/webhookd` doesn't collide with the chart artifact.
 - **First OCI push to ghcr.io is private by default.** One-time manual flip via the package settings page after the first successful release. The `gh api /user/packages/...` workaround needs a PAT with `write:packages` scope (default `GITHUB_TOKEN` can't change package visibility).
+- **`{{ .Values.foo | quote }}` renders large ints in scientific notation.** A YAML int like `1048576` becomes `"1.048576e+06"` when piped through `quote`, which `strconv.ParseInt` then rejects. For numeric env vars, use `{{ printf "%d" (.Values.foo | int64) | quote }}`. Caught by ct install in CI when the pod CrashLoopBackOff'd reading `WEBHOOK_MAX_BODY_BYTES`. Helm-unittest's `helm template` doesn't surface this because nothing parses the value at template-time — only the running binary does.
 
 ## Smoke testing the binary
 
