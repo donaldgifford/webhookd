@@ -613,6 +613,33 @@ install paths.
       `docs/runbook/release-checklist.md` — pre-flight, release,
       one-time visibility flip, OCI smoke, gh-pages smoke, cleanup
       verification, rollback steps.
+- [x] **Local structural smoke test on kind** (image substitution
+      since `ghcr.io/donaldgifford/webhookd:0.1.0` doesn't exist
+      yet — Resolved Decision §1 binary-tag prerequisite is
+      post-merge):
+  - [x] `kind create cluster --name webhookd-smoke`.
+  - [x] `kubectl apply -f deploy/crds/samlgroupmapping.yaml`.
+  - [x] `kubectl create namespace {webhookd,wiz-operator,ct-target}`.
+  - [x] `helm install webhookd ./charts/webhookd -n webhookd
+        -f charts/webhookd/ci/ci-values.yaml --set
+        image.repository=registry.k8s.io/pause --set image.tag=3.10`
+        succeeds.
+  - [x] CRD-precheck Job runs successfully — pulled
+        `cgr.dev/chainguard/kubectl:latest-dev`, executed against
+        the kind apiserver, exited 0 (CRD present), and was
+        cleaned up by `hook-delete-policy: hook-succeeded`.
+  - [x] All chart resources apply: Deployment, Service (with both
+        named ports), ServiceAccount in `webhookd` ns, Role +
+        RoleBinding in `ct-target` ns (cross-namespace plumbing
+        verified), Secret with the signing key.
+  - [x] Pod is scheduled (CrashLoopBackOff with pause:3.10 is
+        expected — pause has no admin/healthz endpoint; this only
+        verifies image-pull + Pod admission + probe wiring).
+  - [x] `helm uninstall webhookd -n webhookd` removes everything
+        except the signing Secret (intentional — `helm.sh/
+        resource-policy: keep`). No orphaned Role, RoleBinding,
+        or hook ClusterRole/SA.
+  - [x] `kind delete cluster --name webhookd-smoke`.
 
 The remaining Phase 6 items are **manual post-merge steps**, gated
 behind:
@@ -632,18 +659,25 @@ top-to-bottom:
       `https://github.com/users/donaldgifford/packages/container/charts%2Fwebhookd/settings`
       and change visibility from Private → Public. Resolved
       Decision §8.
-- [ ] OCI install smoke test on a fresh kind cluster
-      (per runbook).
-- [ ] gh-pages install smoke test on a separate kind cluster
-      (per runbook).
-- [ ] `helm uninstall` cleanup verification (per runbook).
+- [ ] **Live** OCI install smoke test on a fresh kind cluster
+      against the chart published from ghcr.io (the local smoke
+      above used `helm install ./charts/webhookd` directly).
+- [ ] **Live** gh-pages install smoke test on a separate kind cluster.
 
 #### Success Criteria
 
-- Both install paths succeed against a fresh cluster; Pod reaches
-  Ready; webhook produces a CR. ⏳ — manual post-merge.
+- Local install on kind succeeds end-to-end: chart applies, RBAC
+  lands cross-namespace, precheck hook runs and is cleaned up,
+  Pod is scheduled. ✅ — verified locally with image substitution
+  (binary `v0.1.0` doesn't exist yet).
+- Both **live** install paths (OCI + gh-pages) succeed against a
+  fresh cluster with the published `v0.1.0` image; Pod reaches
+  Ready; webhook produces a CR. ⏳ — gated on user cutting v0.1.0
+  binary tag (Resolved Decision §1).
 - `helm uninstall` leaves zero residue (no orphaned Role,
-  RoleBinding, or precheck SA/ClusterRole). ⏳ — manual post-merge.
+  RoleBinding, or precheck SA/ClusterRole). ✅ — verified locally;
+  only the signing Secret survives by design (`helm.sh/resource-
+  policy: keep`).
 - `docs/runbook/release-checklist.md` is the one place future-us
   re-runs to verify a release. ✅
 
