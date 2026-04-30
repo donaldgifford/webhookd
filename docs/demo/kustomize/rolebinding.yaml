@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: webhookd-demo
+  namespace: demo-targets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: webhookd-demo
+subjects:
+  - kind: ServiceAccount
+    name: webhookd-demo
+    namespace: webhookd-demo

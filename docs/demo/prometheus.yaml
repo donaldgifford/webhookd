@@ -1,0 +1,19 @@
+# Prometheus scrape config for webhookd-demo running natively on the host.
+#
+# Linux note: host.docker.internal does not resolve by default on Linux.
+# Either uncomment the extra_hosts hint in docker-compose.yaml or replace
+# the target below with your bridge IP (commonly 172.17.0.1).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: webhookd-demo
+    static_configs:
+      - targets:
+          - host.docker.internal:9090
+    metrics_path: /metrics
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

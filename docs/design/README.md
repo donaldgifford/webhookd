@@ -35,4 +35,5 @@ docz create design "Your Design Title"
 | DESIGN-0001 | Stateless Webhook Receiver — Phase 1 | Implemented | 2026-04-21 | Donald Gifford | [0001-stateless-webhook-receiver-phase-1.md](0001-stateless-webhook-receiver-phase-1.md) |
 | DESIGN-0002 | JSM Webhook → SAMLMapping Provisioning — Phase 2 | Implemented | 2026-04-21 | Donald Gifford | [0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md](0002-jsm-webhook-to-samlmapping-provisioning-phase-2.md) |
 | DESIGN-0003 | Helm Chart and Release Pipeline for webhookd | Implemented | 2026-04-28 | Donald Gifford | [0003-helm-chart-and-release-pipeline-for-webhookd.md](0003-helm-chart-and-release-pipeline-for-webhookd.md) |
+| DESIGN-0004 | Multi-Tenant Provider x Backend Architecture | Draft | 2026-04-30 | Donald Gifford | [0004-multi-tenant-provider-x-backend-architecture.md](0004-multi-tenant-provider-x-backend-architecture.md) |
 <!-- END DOCZ AUTO-GENERATED -->

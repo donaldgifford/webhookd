@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-operator
+  labels:
+    app: mock-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-operator
+  template:
+    metadata:
+      labels:
+        app: mock-operator
+    spec:
+      serviceAccountName: webhookd-demo
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock-operator
+          image: mock-operator:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEMO_NAMESPACE
+              value: demo-targets
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true

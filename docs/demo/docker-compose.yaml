@@ -1,0 +1,35 @@
+# Local observability stack for webhookd-demo.
+#
+# webhookd-demo runs natively on the host (or in kind via kustomize)
+# and pushes traces here. Prometheus scrapes the host's :9090/metrics.
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.110.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP/gRPC
+      - "4318:4318"   # OTLP/HTTP
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.61.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI
+      - "14250:14250" # collector gRPC
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yaml"
+      - "--storage.tsdb.retention.time=2h"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+    # Map UI to host :9091 to avoid clashing with webhookd-demo's
+    # admin listener on :9090.
+    ports:
+      - "9091:9090"

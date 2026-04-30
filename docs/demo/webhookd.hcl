@@ -1,0 +1,52 @@
+# webhookd-demo example config.
+#
+# Drop this next to the binary as `webhookd.hcl`. The justfile's
+# `run` recipe loads it via `--config ../webhookd.hcl` (relative to
+# the app_dir).
+
+defaults {
+  idempotency_ttl = "5m"
+  max_body_bytes  = 1048576
+}
+
+runtime {
+  addr             = ":8080"
+  admin_addr       = ":9090"
+  shutdown_timeout = "30s"
+
+  rate_limit {
+    rps   = 50
+    burst = 100
+  }
+
+  tracing {
+    enabled  = true
+    endpoint = "localhost:4317"
+    service  = "webhookd-demo"
+  }
+}
+
+instance "demo-tenant-a" {
+  provider "jsm" {
+    trigger_status = "Approved"
+
+    fields {
+      identity_provider_id = "customfield_10001"
+      role                 = "customfield_10002"
+      project              = "customfield_10003"
+    }
+
+    signing {
+      secret_env       = "WEBHOOK_DEMO_SECRET"
+      signature_header = "X-Hub-Signature-256"
+      timestamp_header = "X-Webhook-Timestamp"
+      skew             = "5m"
+    }
+  }
+
+  backend "k8s" {
+    kubeconfig_env = "KUBECONFIG"
+    namespace      = "demo-targets"
+    sync_timeout   = "20s"
+  }
+}

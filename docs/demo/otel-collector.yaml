@@ -1,0 +1,35 @@
+# OTel Collector pipeline for the demo: receive OTLP, send to Jaeger.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Useful when debugging the collector itself. Comment out in steady state.
+  debug:
+    verbosity: basic
+    sampling_initial: 1
+    sampling_thereafter: 100
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]
+  telemetry:
+    logs:
+      level: info
