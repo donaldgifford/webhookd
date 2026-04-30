@@ -31,9 +31,9 @@ data:
         trigger_status = "Approved"
 
         fields {
-          identity_provider_id = "customfield_10001"
-          role                 = "customfield_10002"
-          project              = "customfield_10003"
+          provider_group_id = "customfield_10001"
+          role              = "customfield_10002"
+          project           = "customfield_10003"
         }
 
         signing {
@@ -45,8 +45,9 @@ data:
       }
 
       backend "k8s" {
-        kubeconfig_env = ""
-        namespace      = "demo-targets"
-        sync_timeout   = "20s"
+        kubeconfig_env       = ""
+        namespace            = "wiz-operator"
+        identity_provider_id = "saml-idp-abc123"
+        sync_timeout         = "20s"
       }
     }

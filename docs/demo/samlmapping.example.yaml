@@ -1,0 +1,16 @@
+---
+apiVersion: wiz.rtkwlf.io/v1alpha1
+kind: SAMLGroupMapping
+metadata:
+  labels:
+    app.kubernetes.io/name: wiz-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: platform-team-mapping
+spec:
+  identityProviderId: "saml-idp-abc123"
+  providerGroupId: "okta-platform-engineering"
+  description: "Platform team access to their Wiz project"
+  roleRef:
+    name: "platform-engineer"
+  projectRefs:
+    - name: "platform-team"

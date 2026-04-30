@@ -1,15 +1,15 @@
 # 12. Kustomize Deploy
 
 A minimal kustomize layout that deploys webhookd-demo + mock-operator
-+ the demo CRD into a kind cluster. No overlays — one base manifests
-set, intentionally small.
++ the `SAMLGroupMapping` CRD into a kind cluster. No overlays — one
+base manifests set, intentionally small.
 
 ## Files
 
 ```
 docs/demo/kustomize/
 ├── kustomization.yaml
-├── crd.yaml                 # WebhookMapping CRD
+├── crd.yaml                 # SAMLGroupMapping CRD (wiz.rtkwlf.io/v1alpha1)
 ├── namespace.yaml
 ├── configmap.yaml           # webhookd.hcl config
 ├── secret.yaml.example      # signing secret stub
@@ -90,61 +90,26 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: demo-targets
+  name: wiz-operator
 ```
 
-Two namespaces: webhookd-demo runs in `webhookd-demo`, applies CRs in
-`demo-targets`. Cross-namespace RBAC mirrors the production pattern.
+Two namespaces: webhookd-demo runs in `webhookd-demo`, applies
+`SAMLGroupMapping` CRs in `wiz-operator` (where the Wiz operator
+watches in production). Cross-namespace RBAC mirrors the production
+pattern.
 
 ## crd.yaml
 
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: webhookmappings.demo.webhookd.io
-spec:
-  group: demo.webhookd.io
-  scope: Namespaced
-  names:
-    kind: WebhookMapping
-    listKind: WebhookMappingList
-    plural: webhookmappings
-    singular: webhookmapping
-    shortNames: [wm]
-  versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-    schema:
-      openAPIV3Schema:
-        type: object
-        properties:
-          spec:
-            type: object
-            properties:
-              identityProviderID: {type: string}
-              role:               {type: string}
-              project:            {type: string}
-            required: [identityProviderID, role, project]
-          status:
-            type: object
-            properties:
-              conditions:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    type:               {type: string}
-                    status:             {type: string}
-                    reason:             {type: string}
-                    message:            {type: string}
-                    lastTransitionTime: {type: string}
-                    observedGeneration: {type: integer}
-                  required: [type, status, lastTransitionTime]
-    subresources:
-      status: {}
-```
+The canonical Wiz operator CRD copied verbatim into
+[`kustomize/crd.yaml`](kustomize/crd.yaml). Group `wiz.rtkwlf.io`,
+kind `SAMLGroupMapping`, with `spec.providerGroupId`,
+`spec.identityProviderId` (required), `spec.roleRef.{name,roleId}`,
+and `spec.projectRefs[].{name,projectId}`. The full file is ~140 lines
+and includes printer columns for `Ready` / `Synced` / `Valid` / `Age`.
+
+A reference instance is committed at
+[`samlmapping.example.yaml`](samlmapping.example.yaml) — the shape the
+JSM provider produces from a happy-path payload.
 
 ## configmap.yaml
 
@@ -184,9 +149,9 @@ data:
         trigger_status = "Approved"
 
         fields {
-          identity_provider_id = "customfield_10001"
-          role                 = "customfield_10002"
-          project              = "customfield_10003"
+          provider_group_id = "customfield_10001"
+          role              = "customfield_10002"
+          project           = "customfield_10003"
         }
 
         signing {
@@ -198,9 +163,10 @@ data:
       }
 
       backend "k8s" {
-        kubeconfig_env = ""               # in-cluster
-        namespace      = "demo-targets"
-        sync_timeout   = "20s"
+        kubeconfig_env       = ""               # in-cluster
+        namespace            = "wiz-operator"
+        identity_provider_id = "saml-idp-abc123"
+        sync_timeout         = "20s"
       }
     }
 ```
@@ -225,7 +191,7 @@ stringData:
 
 ## RBAC
 
-ServiceAccount in `webhookd-demo`; Role in `demo-targets`; RoleBinding
+ServiceAccount in `webhookd-demo`; Role in `wiz-operator`; RoleBinding
 that grants the SA permission cross-namespace.
 
 ### `serviceaccount.yaml`
@@ -244,13 +210,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: webhookd-demo
-  namespace: demo-targets
+  namespace: wiz-operator
 rules:
-- apiGroups: ["demo.webhookd.io"]
-  resources: ["webhookmappings"]
+- apiGroups: ["wiz.rtkwlf.io"]
+  resources: ["samlgroupmappings"]
   verbs: ["get", "list", "watch", "create", "patch", "update"]
-- apiGroups: ["demo.webhookd.io"]
-  resources: ["webhookmappings/status"]
+- apiGroups: ["wiz.rtkwlf.io"]
+  resources: ["samlgroupmappings/status"]
   verbs: ["get", "patch", "update"]
 ```
 
@@ -261,7 +227,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: webhookd-demo
-  namespace: demo-targets
+  namespace: wiz-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -396,7 +362,7 @@ spec:
         imagePullPolicy: IfNotPresent
         env:
         - name: DEMO_NAMESPACE
-          value: demo-targets
+          value: wiz-operator
         resources:
           requests:
             cpu: 10m
@@ -440,7 +406,8 @@ kubectl get pods -n webhookd-demo -w
 
 ## What we proved
 
-- [x] Cross-namespace RBAC pattern (Role in target ns, SA in app ns)
+- [x] Cross-namespace RBAC pattern (Role in `wiz-operator`, SA in `webhookd-demo`)
+- [x] Canonical Wiz CRD (`wiz.rtkwlf.io/v1alpha1.SAMLGroupMapping`) installed via kustomize
 - [x] Distroless image runs as nonroot under restricted SecurityContext
 - [x] HCL config carried in a ConfigMap; secret in a Secret
 - [x] kind NodePorts expose `:8080` / `:9090` to the host

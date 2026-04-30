@@ -18,7 +18,7 @@ Read top to bottom, optionally code along, smoke-test at the end.
 | 2     | [02-config.md](02-config.md) | HCL2 config schema + typed loader |
 | 3     | [03-registry.md](03-registry.md) | `Provider` / `Backend` interfaces, `Registry`, `BackendRequest` |
 | 4     | [04-jsm-provider.md](04-jsm-provider.md) | JSM provider package (parse, sign-verify, build request, response) |
-| 5     | [05-k8s-backend.md](05-k8s-backend.md) | Kubernetes backend (SSA apply + watch on a demo CRD) |
+| 5     | [05-k8s-backend.md](05-k8s-backend.md) | Kubernetes backend (SSA apply + watch on the SAMLGroupMapping CRD) |
 | 6     | [06-observability.md](06-observability.md) | slog handler, Prometheus registry, OTel tracer |
 | 7     | [07-http.md](07-http.md) | Admin mux, server, signature middleware, rate limiter |
 | 8     | [08-dispatcher.md](08-dispatcher.md) | Multi-tenant routing, idempotency tracker, response shaping |
@@ -44,7 +44,7 @@ The [`justfile`](justfile) wraps every demo task. After the walkthrough
 your loop will be:
 
 ```bash
-just kind-up        # create kind cluster + apply demo CRD
+just kind-up        # create kind cluster + apply SAMLGroupMapping CRD
 just dev-stack      # docker-compose: otel-collector, prometheus, jaeger
 just mock-operator  # tiny goroutine that flips Ready=True on demo CRs
 just run            # webhookd-demo binary, native, against kind

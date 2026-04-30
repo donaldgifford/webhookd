@@ -1,54 +1,167 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: webhookmappings.demo.webhookd.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: samlgroupmappings.wiz.rtkwlf.io
 spec:
-  group: demo.webhookd.io
-  scope: Namespaced
+  group: wiz.rtkwlf.io
   names:
-    kind: WebhookMapping
-    listKind: WebhookMappingList
-    plural: webhookmappings
-    singular: webhookmapping
-    shortNames: [wm]
+    kind: SAMLGroupMapping
+    listKind: SAMLGroupMappingList
+    plural: samlgroupmappings
+    singular: samlgroupmapping
+  scope: Namespaced
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
+    - additionalPrinterColumns:
+        - jsonPath: .status.conditions[?(@.type=="Ready")].status
+          name: Ready
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="Synced")].status
+          name: Synced
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="Valid")].status
+          name: Valid
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
       schema:
         openAPIV3Schema:
-          type: object
+          description: |-
+            SAMLGroupMapping is the Schema for the wizsamlgroupmappings API. It
+            represents the binding between an Okta group (via SAML/SCIM), a user role,
+            and one or more projects. This is what makes a team's Wiz access work.
           properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
             spec:
-              type: object
+              description: spec defines the desired state of SAMLGroupMapping
               properties:
-                identityProviderID:
+                description:
+                  description: Description is a human-readable description of this mapping.
                   type: string
-                role:
+                identityProviderId:
+                  description: |-
+                    IdentityProviderID is the Wiz SAML identity provider ID this mapping
+                    belongs to.
+                  minLength: 1
                   type: string
-                project:
+                projectRefs:
+                  description: |-
+                    ProjectRefs is a list of project references to scope the mapping.
+                    Each entry uses either Name (K8s Project CR name) or ProjectID
+                    (direct Wiz project ID). If empty, the mapping is unscoped.
+                  items:
+                    description: ProjectReference identifies a Wiz project by K8s CR name or direct ID.
+                    properties:
+                      name:
+                        description: |-
+                          Name is the K8s Project CR name in the same namespace. The
+                          controller resolves it to status.wizResourceId.
+                        type: string
+                      projectId:
+                        description: |-
+                          ProjectID is the direct Wiz project ID. Use this when the project
+                          is not managed by the operator.
+                        type: string
+                    type: object
+                  type: array
+                providerGroupId:
+                  description: |-
+                    ProviderGroupID is the Okta group ID as it appears in the SAML
+                    assertion. Maps to the SDK's ProviderGroupID field.
+                  minLength: 1
                   type: string
-              required: [identityProviderID, role, project]
-            status:
+                roleRef:
+                  description: |-
+                    RoleRef references the Wiz user role to assign. Use either Name
+                    (K8s UserRole CR name, resolved to status.wizResourceId) or
+                    RoleID (direct Wiz role ID).
+                  properties:
+                    name:
+                      description: |-
+                        Name is the K8s UserRole CR name in the same namespace. The
+                        controller resolves it to status.wizResourceId.
+                      type: string
+                    roleId:
+                      description: |-
+                        RoleID is the direct Wiz user role ID. Use this when the role is
+                        not managed by the operator.
+                      type: string
+                  type: object
+              required:
+                - identityProviderId
+                - providerGroupId
+                - roleRef
               type: object
+            status:
+              description: status defines the observed state of SAMLGroupMapping
               properties:
                 conditions:
-                  type: array
+                  description: Conditions represent the current state of the resource.
                   items:
-                    type: object
+                    description: Condition contains details for one aspect of the current state of this API Resource.
                     properties:
-                      type:
-                        type: string
-                      status:
-                        type: string
-                      reason:
+                      lastTransitionTime:
+                        format: date-time
                         type: string
                       message:
-                        type: string
-                      lastTransitionTime:
+                        maxLength: 32768
                         type: string
                       observedGeneration:
+                        format: int64
+                        minimum: 0
                         type: integer
-                    required: [type, status, lastTransitionTime]
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                lastSyncTime:
+                  format: date-time
+                  type: string
+                observedGeneration:
+                  format: int64
+                  type: integer
+                specHash:
+                  type: string
+                wizResourceId:
+                  description: |-
+                    WizResourceID is a composite key <identityProviderID>/<providerGroupID>
+                    since group mappings are not standalone Wiz resources.
+                  type: string
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true
       subresources:
         status: {}

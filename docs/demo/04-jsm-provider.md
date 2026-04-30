@@ -2,9 +2,13 @@
 
 The JSM provider takes a Jira Service Management webhook payload, verifies
 its HMAC signature, parses the relevant fields, and emits a typed
-`BackendRequest` for the K8s backend to apply. Pure functions —
-no I/O — except for `VerifySignature`, which reads a secret from
-the environment.
+`BackendRequest` for the K8s backend to apply as a `SAMLGroupMapping` CR.
+Pure functions — no I/O — except for `VerifySignature`, which reads a
+secret from the environment.
+
+The CR shape is the canonical Wiz operator type at
+`wiz.rtkwlf.io/v1alpha1`; see [samlmapping.example.yaml](samlmapping.example.yaml)
+for the target shape.
 
 ## Files in this phase
 
@@ -12,7 +16,7 @@ the environment.
 internal/integrations/jsm/
 ├── config.go      # HCL2 Config struct
 ├── decode.go      # JSON payload → typed model
-├── request.go     # MappingRequest (the BackendRequest)
+├── request.go     # SAMLGroupMappingRequest (the BackendRequest)
 ├── provider.go    # Provider interface impl
 ├── response.go    # BuildResponse shape
 ├── init.go        # Registers with the global registry
@@ -51,10 +55,18 @@ type Config struct {
 // Fields maps the tenant's Jira custom-field IDs to the demo's
 // internal field names. Different tenants use different custom-field
 // IDs for the same logical field, which is why this is per-instance.
+//
+// The K8s backend builds a SAMLGroupMapping spec from these:
+//   ProviderGroupID → spec.providerGroupId
+//   Role            → spec.roleRef.name
+//   Project         → spec.projectRefs[0].name
+//
+// spec.identityProviderId comes from the *backend's* per-instance config
+// (it's the tenant-wide IDP, not a per-payload value).
 type Fields struct {
-    IdentityProviderID string `hcl:"identity_provider_id"`
-    Role               string `hcl:"role"`
-    Project            string `hcl:"project"`
+    ProviderGroupID string `hcl:"provider_group_id"`
+    Role            string `hcl:"role"`
+    Project         string `hcl:"project"`
 }
 
 // Signing configures HMAC verification.
@@ -100,8 +112,14 @@ func validateConfig(c Config) error {
     if c.TriggerStatus == "" {
         return fmt.Errorf("trigger_status is required")
     }
-    if c.Fields.IdentityProviderID == "" {
-        return fmt.Errorf("fields.identity_provider_id is required")
+    if c.Fields.ProviderGroupID == "" {
+        return fmt.Errorf("fields.provider_group_id is required")
+    }
+    if c.Fields.Role == "" {
+        return fmt.Errorf("fields.role is required")
+    }
+    if c.Fields.Project == "" {
+        return fmt.Errorf("fields.project is required")
     }
     if c.Signing.SecretEnv == "" {
         return fmt.Errorf("signing.secret_env is required")
@@ -136,7 +154,8 @@ type jsmPayload struct {
     Issue struct {
         Key    string `json:"key"`
         Fields struct {
-            Status struct {
+            Summary string `json:"summary"`
+            Status  struct {
                 Name string `json:"name"`
             } `json:"status"`
             // Custom fields are tenant-configured. We unmarshal into
@@ -191,30 +210,42 @@ func extractField(custom map[string]string, id string) (string, bool) {
 ## The BackendRequest
 
 This is the typed object the Provider hands to the Backend. The K8s
-backend will type-assert to `*MappingRequest` and apply the embedded
-fields as a CR.
+backend type-asserts to `*SAMLGroupMappingRequest` and assembles a
+`SAMLGroupMapping` CR from these fields plus the backend's per-instance
+`identity_provider_id`.
 
 ### `internal/integrations/jsm/request.go`
 
 ```go
 package jsm
 
-// MappingRequest is the BackendRequest that the JSM provider produces.
-// Each field maps to a column on the demo CRD (WebhookMapping).
-//
-// The K8s backend type-asserts to *MappingRequest and uses these
-// fields to build a server-side-applied CR.
-type MappingRequest struct {
+// SAMLGroupMappingRequest is the BackendRequest the JSM provider produces.
+// The K8s backend type-asserts to *SAMLGroupMappingRequest and assembles
+// a SAMLGroupMapping CR from these fields plus the backend's per-instance
+// IdentityProviderID.
+type SAMLGroupMappingRequest struct {
     // IssueKey is the Jira issue key (e.g. "ABC-123"). Used as the
     // CR's metadata.name (after lowercasing) and as a correlation
     // annotation for trace/log linking.
     IssueKey string
 
-    // IdentityProviderID, Role, Project come straight off the JSM
-    // custom fields configured on the instance.
-    IdentityProviderID string
-    Role               string
-    Project            string
+    // ProviderGroupID is the Okta group ID extracted from the JSM
+    // payload — populates spec.providerGroupId.
+    ProviderGroupID string
+
+    // RoleName is the K8s UserRole CR name extracted from the JSM
+    // payload — populates spec.roleRef.name. The Wiz operator
+    // resolves it to status.wizResourceId at reconcile time.
+    RoleName string
+
+    // ProjectName is the K8s Project CR name extracted from the JSM
+    // payload — populates spec.projectRefs[0].name (single element
+    // for the demo; production can split on commas / accept arrays).
+    ProjectName string
+
+    // Description is a human-readable description, typically the
+    // JSM issue summary. Populates spec.description.
+    Description string
 
     // TraceID, if non-empty, is propagated as an annotation on the
     // applied CR (per ADR-0007) so downstream operators can link
@@ -223,7 +254,7 @@ type MappingRequest struct {
 }
 
 // Kind implements webhook.BackendRequest.
-func (r *MappingRequest) Kind() string { return "k8s.WebhookMapping" }
+func (r *SAMLGroupMappingRequest) Kind() string { return "wiz.SAMLGroupMapping" }
 ```
 
 ## The Provider implementation
@@ -324,8 +355,8 @@ func (p *Provider) IdempotencyKey(_ *http.Request, body []byte) (string, error) 
     ), nil
 }
 
-// Handle implements webhook.Provider. Pure: bytes in, *MappingRequest
-// or typed error out.
+// Handle implements webhook.Provider. Pure: bytes in,
+// *SAMLGroupMappingRequest or typed error out.
 func (p *Provider) Handle(ctx context.Context, body []byte, cfg webhook.ProviderConfig) (webhook.BackendRequest, error) {
     c, ok := cfg.(Config)
     if !ok {
@@ -345,9 +376,9 @@ func (p *Provider) Handle(ctx context.Context, body []byte, cfg webhook.Provider
         )
     }
 
-    idp, ok := extractField(custom, c.Fields.IdentityProviderID)
+    providerGroup, ok := extractField(custom, c.Fields.ProviderGroupID)
     if !ok {
-        return nil, fmt.Errorf("%w: identity_provider_id (%s)", ErrMissingField, c.Fields.IdentityProviderID)
+        return nil, fmt.Errorf("%w: provider_group_id (%s)", ErrMissingField, c.Fields.ProviderGroupID)
     }
     role, ok := extractField(custom, c.Fields.Role)
     if !ok {
@@ -358,6 +389,12 @@ func (p *Provider) Handle(ctx context.Context, body []byte, cfg webhook.Provider
         return nil, fmt.Errorf("%w: project (%s)", ErrMissingField, c.Fields.Project)
     }
 
+    // description is optional — fall back to a synthetic when missing.
+    description := payload.Issue.Fields.Summary
+    if description == "" {
+        description = fmt.Sprintf("JSM %s — %s access", payload.Issue.Key, role)
+    }
+
     // Propagate the active trace ID via the BackendRequest so the
     // K8s backend can stamp it as an annotation (ADR-0007).
     var traceID string
@@ -365,12 +402,13 @@ func (p *Provider) Handle(ctx context.Context, body []byte, cfg webhook.Provider
         traceID = sc.TraceID().String()
     }
 
-    return &MappingRequest{
-        IssueKey:           strings.ToLower(payload.Issue.Key),
-        IdentityProviderID: idp,
-        Role:               role,
-        Project:            project,
-        TraceID:            traceID,
+    return &SAMLGroupMappingRequest{
+        IssueKey:        strings.ToLower(payload.Issue.Key),
+        ProviderGroupID: providerGroup,
+        RoleName:        role,
+        ProjectName:     project,
+        Description:     description,
+        TraceID:         traceID,
     }, nil
 }
 
@@ -469,18 +507,20 @@ func TestProvider_Handle(t *testing.T) {
     cfg := Config{
         TriggerStatus: "Approved",
         Fields: Fields{
-            IdentityProviderID: "customfield_10001",
-            Role:               "customfield_10002",
-            Project:            "customfield_10003",
+            ProviderGroupID: "customfield_10001",
+            Role:            "customfield_10002",
+            Project:         "customfield_10003",
         },
     }
 
     tests := []struct {
-        name      string
-        body      string
-        wantErr   error
-        wantKey   string
-        wantIDP   string
+        name              string
+        body              string
+        wantErr           error
+        wantKey           string
+        wantProviderGroup string
+        wantRole          string
+        wantProject       string
     }{
         {
             name: "happy path",
@@ -488,15 +528,18 @@ func TestProvider_Handle(t *testing.T) {
                 "issue": {
                     "key": "ABC-123",
                     "fields": {
+                        "summary": "Platform team access to their Wiz project",
                         "status": {"name": "Approved"},
-                        "customfield_10001": "wiz-tenant-a",
-                        "customfield_10002": "Editor",
-                        "customfield_10003": "demo-project"
+                        "customfield_10001": "okta-platform-engineering",
+                        "customfield_10002": "platform-engineer",
+                        "customfield_10003": "platform-team"
                     }
                 }
             }`,
-            wantKey: "abc-123",
-            wantIDP: "wiz-tenant-a",
+            wantKey:           "abc-123",
+            wantProviderGroup: "okta-platform-engineering",
+            wantRole:          "platform-engineer",
+            wantProject:       "platform-team",
         },
         {
             name: "trigger status mismatch becomes typed error",
@@ -520,8 +563,8 @@ func TestProvider_Handle(t *testing.T) {
                     "key": "ABC-123",
                     "fields": {
                         "status": {"name": "Approved"},
-                        "customfield_10002": "Editor",
-                        "customfield_10003": "demo-project"
+                        "customfield_10002": "platform-engineer",
+                        "customfield_10003": "platform-team"
                     }
                 }
             }`,
@@ -542,15 +585,21 @@ func TestProvider_Handle(t *testing.T) {
             if err != nil {
                 t.Fatalf("Handle err = %v, want nil", err)
             }
-            mr, ok := req.(*MappingRequest)
+            mr, ok := req.(*SAMLGroupMappingRequest)
             if !ok {
-                t.Fatalf("Handle returned %T, want *MappingRequest", req)
+                t.Fatalf("Handle returned %T, want *SAMLGroupMappingRequest", req)
             }
             if mr.IssueKey != tt.wantKey {
                 t.Errorf("IssueKey = %q, want %q", mr.IssueKey, tt.wantKey)
             }
-            if mr.IdentityProviderID != tt.wantIDP {
-                t.Errorf("IdentityProviderID = %q, want %q", mr.IdentityProviderID, tt.wantIDP)
+            if mr.ProviderGroupID != tt.wantProviderGroup {
+                t.Errorf("ProviderGroupID = %q, want %q", mr.ProviderGroupID, tt.wantProviderGroup)
+            }
+            if mr.RoleName != tt.wantRole {
+                t.Errorf("RoleName = %q, want %q", mr.RoleName, tt.wantRole)
+            }
+            if mr.ProjectName != tt.wantProject {
+                t.Errorf("ProjectName = %q, want %q", mr.ProjectName, tt.wantProject)
             }
         })
     }

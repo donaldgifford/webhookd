@@ -52,7 +52,7 @@ Lay them down up front so the next phases can drop files straight in:
 
 ```bash
 mkdir -p cmd/webhookd-demo cmd/mock-operator
-mkdir -p internal/api/v1alpha1
+mkdir -p internal/wizapi/v1alpha1
 mkdir -p internal/config
 mkdir -p internal/observability
 mkdir -p internal/httpx
