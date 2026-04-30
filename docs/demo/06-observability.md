@@ -290,7 +290,6 @@ import (
     "go.opentelemetry.io/otel/sdk/resource"
     sdktrace "go.opentelemetry.io/otel/sdk/trace"
     semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-    "google.golang.org/grpc/credentials/insecure"
 )
 
 // TracerProvider is what callers receive. Wraps the OTel TracerProvider
@@ -334,12 +333,7 @@ func NewTracerProvider(ctx context.Context, opts TracingOptions) (*TracerProvide
     exp, err := otlptrace.New(ctx, otlptracegrpc.NewClient(
         otlptracegrpc.WithEndpoint(opts.Endpoint),
         otlptracegrpc.WithInsecure(),
-        otlptracegrpc.WithDialOption(otlptracegrpc.WithGRPCOption(
-            // (placeholder) — production code may add auth, retries, etc.
-        )),
-        // grpc.WithTransportCredentials(insecure.NewCredentials()),
     ))
-    _ = insecure.NewCredentials // keep the import live for production parity
     if err != nil {
         return nil, fmt.Errorf("build otlp exporter: %w", err)
     }
@@ -371,11 +365,11 @@ func NewTracerProvider(ctx context.Context, opts TracingOptions) (*TracerProvide
 }
 ```
 
-> The commented-out `grpc.WithTransportCredentials(insecure.NewCredentials())`
-> line shows the explicit-insecure pattern when you switch from the
-> deprecated `WithInsecure()` to a `grpc.DialOption` — keep one of the
-> two. The code as written uses `WithInsecure()` which is the simplest
-> path; production code should prefer the explicit credentials form.
+> `WithInsecure()` is technically deprecated in favor of
+> `WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))`
+> from `google.golang.org/grpc` + `google.golang.org/grpc/credentials/insecure`.
+> The simpler form is fine for a demo against a local OTel collector;
+> production code should use the explicit-credentials form.
 
 ## Trace correlation in slog
 

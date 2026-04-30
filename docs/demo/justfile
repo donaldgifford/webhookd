@@ -85,7 +85,7 @@ mock-operator:
     go run ./cmd/mock-operator
 
 # Run a single Go test package (PKG=./internal/integrations/jsm).
-test PKG="./..."
+test PKG="./...":
     cd {{app_dir}} && go test -race -v {{PKG}}
 
 # --- Deploy (kustomize) ---

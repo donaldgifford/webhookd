@@ -42,7 +42,6 @@ import (
     "net/http/pprof"
     "os"
     "strconv"
-    "sync/atomic"
     "time"
 
     "github.com/prometheus/client_golang/prometheus"
@@ -108,10 +107,6 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
         _ = err
     }
 }
-
-// Compile-time use of atomic to prove the import sticks (the in-flight
-// gauge in middleware.go uses it directly).
-var _ = atomic.Int64{}
 ```
 
 ## Public server
