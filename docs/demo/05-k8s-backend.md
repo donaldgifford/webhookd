@@ -35,6 +35,12 @@ A handwritten typed model that mirrors the canonical
 DeepCopy via `controller-gen`; for a demo, a handful of handwritten
 DeepCopy methods is faster than configuring codegen.
 
+> **Looking ahead:** when `github.com/donaldgifford/wiz-operator` is
+> ready to import, the stub here can be deleted in favor of upstream
+> types — see [14-upstream-types.md](14-upstream-types.md) for the
+> swap recipe. The shape below mirrors upstream verbatim, so the
+> rest of this demo doesn't need to change when you do.
+
 ### `internal/wizapi/v1alpha1/groupversion_info.go`
 
 ```go

@@ -27,6 +27,7 @@ Read top to bottom, optionally code along, smoke-test at the end.
 | 11    | [11-image-build.md](11-image-build.md) | Production-shaped Docker build via `docker buildx bake` |
 | 12    | [12-kustomize.md](12-kustomize.md) | Minimal kustomize deployment to a kind cluster |
 | 13    | [13-smoke-test.md](13-smoke-test.md) | End-to-end signed payload → CR → response |
+| 14    | [14-upstream-types.md](14-upstream-types.md) | *(optional)* Swap the local `wizapi` stub for `github.com/donaldgifford/wiz-operator/api/v1alpha1` |
 
 ## Prerequisites
 
