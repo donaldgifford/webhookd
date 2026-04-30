@@ -48,9 +48,9 @@ instance "demo-tenant-a" {
     trigger_status = "Approved"
 
     fields {
-      identity_provider_id = "customfield_10001"
-      role                 = "customfield_10002"
-      project              = "customfield_10003"
+      provider_group_id = "customfield_10001"
+      role              = "customfield_10002"
+      project           = "customfield_10003"
     }
 
     signing {
@@ -62,12 +62,26 @@ instance "demo-tenant-a" {
   }
 
   backend "k8s" {
-    kubeconfig_env = "KUBECONFIG"
-    namespace      = "demo-targets"
-    sync_timeout   = "20s"
+    kubeconfig_env       = "KUBECONFIG"
+    namespace            = "wiz-operator"
+    identity_provider_id = "saml-idp-abc123"
+    sync_timeout         = "20s"
   }
 }
 ```
+
+The `provider.fields` map JSM custom-field IDs to the SAMLGroupMapping
+spec fields the K8s backend builds:
+
+| HCL field | Source | Maps to |
+|-----------|--------|---------|
+| `provider_group_id` | JSM custom field | `spec.providerGroupId` |
+| `role`              | JSM custom field | `spec.roleRef.name` |
+| `project`           | JSM custom field | `spec.projectRefs[0].name` |
+
+The `backend.identity_provider_id` is **per-instance** — one IDP per
+JSM tenant — and populates `spec.identityProviderId` directly. It
+doesn't come from the JSM payload.
 
 The block syntax mirrors Terraform: `instance "<id>" { provider "<type>" { … } }`.
 The HCL parser uses block labels (`"demo-tenant-a"`, `"jsm"`, `"k8s"`)

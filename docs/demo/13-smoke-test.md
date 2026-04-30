@@ -27,7 +27,7 @@ send-jsm webhook_id="demo-tenant-a":
     #!/usr/bin/env bash
     set -euo pipefail
     SECRET=topsecret
-    PAYLOAD='{"issue":{"key":"ABC-123","fields":{"status":{"name":"Approved"},"customfield_10001":"wiz-tenant-a","customfield_10002":"Editor","customfield_10003":"demo-project"}}}'
+    PAYLOAD='{"issue":{"key":"ABC-123","fields":{"summary":"Platform team access to their Wiz project","status":{"name":"Approved"},"customfield_10001":"okta-platform-engineering","customfield_10002":"platform-engineer","customfield_10003":"platform-team"}}}'
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     SIG=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" -hex | awk '{print $2}')
     curl -s -X POST "http://localhost:8080/jsm/{{webhook_id}}" \
@@ -56,28 +56,32 @@ Expected response:
 ## Verify the side effect
 
 ```bash
-kubectl get webhookmappings -n demo-targets
-# NAME      AGE
-# abc-123   3s
+kubectl get samlgroupmappings -n wiz-operator
+# NAME      READY   SYNCED   VALID   AGE
+# abc-123   True                     3s
 
-kubectl get webhookmappings -n demo-targets abc-123 -o yaml
+kubectl get samlgroupmapping -n wiz-operator abc-123 -o yaml
 ```
 
 Should show:
 
 ```yaml
-apiVersion: demo.webhookd.io/v1alpha1
-kind: WebhookMapping
+apiVersion: wiz.rtkwlf.io/v1alpha1
+kind: SAMLGroupMapping
 metadata:
   name: abc-123
-  namespace: demo-targets
+  namespace: wiz-operator
   annotations:
     webhookd.io/jsm-issue-key: abc-123
     webhookd.io/trace-id: 9c43b2f1d6a8e0c4b7ab95f3e2d1c8a0    # ADR-0007
 spec:
-  identityProviderID: wiz-tenant-a
-  role: Editor
-  project: demo-project
+  identityProviderId: saml-idp-abc123
+  providerGroupId: okta-platform-engineering
+  description: "Platform team access to their Wiz project"
+  roleRef:
+    name: platform-engineer
+  projectRefs:
+  - name: platform-team
 status:
   conditions:
   - type: Ready
@@ -89,7 +93,8 @@ status:
 
 Three things to verify:
 
-1. The CR exists in `demo-targets`
+1. The CR exists in `wiz-operator` and matches the canonical
+   [`samlmapping.example.yaml`](samlmapping.example.yaml) shape
 2. The `webhookd.io/trace-id` annotation is present and matches the
    response body's `trace_id` (ADR-0007 propagation)
 3. `Ready=True` is set (mock operator did its job)
@@ -131,7 +136,7 @@ Span attributes worth confirming:
 - `webhook.provider_type=jsm`
 - `webhook.instance_id=demo-tenant-a`
 - `backend.type=k8s`
-- `backend.request_kind=k8s.WebhookMapping`
+- `backend.request_kind=wiz.SAMLGroupMapping`
 - `backend.result_kind=1` (ResultSuccess)
 - `backend.http_status=200`
 

@@ -24,11 +24,11 @@ default:
 
 # --- Kubernetes (kind) ---
 
-# Create kind cluster with port-forward + apply demo CRD + namespaces.
+# Create kind cluster with port-forward + apply SAMLGroupMapping CRD + namespaces.
 kind-up:
     kind create cluster --config kind-config.yaml --name {{kind_name}}
     kubectl --context kind-{{kind_name}} apply -f kustomize/crd.yaml
-    kubectl --context kind-{{kind_name}} create namespace demo-targets --dry-run=client -o yaml | kubectl apply -f -
+    kubectl --context kind-{{kind_name}} create namespace wiz-operator --dry-run=client -o yaml | kubectl apply -f -
 
 # Tear down the kind cluster.
 kind-down:
@@ -81,7 +81,7 @@ run:
 mock-operator:
     cd {{app_dir}} && \
     KUBECONFIG={{kubeconfig}} \
-    DEMO_NAMESPACE=demo-targets \
+    DEMO_NAMESPACE=wiz-operator \
     go run ./cmd/mock-operator
 
 # Run a single Go test package (PKG=./internal/integrations/jsm).
@@ -109,10 +109,11 @@ logs:
 # --- Smoke test ---
 
 # Send a signed JSM payload. Defaults to the demo-tenant-a webhook id.
+# customfield_10001 = providerGroupId, _10002 = roleRef.name, _10003 = projectRefs[0].name.
 send-jsm webhook_id="demo-tenant-a":
     #!/usr/bin/env bash
     set -euo pipefail
-    PAYLOAD='{"issue":{"key":"ABC-123","fields":{"status":{"name":"Approved"},"customfield_10001":"wiz-tenant-a","customfield_10002":"Editor","customfield_10003":"demo-project"}}}'
+    PAYLOAD='{"issue":{"key":"ABC-123","fields":{"summary":"Platform team access to their Wiz project","status":{"name":"Approved"},"customfield_10001":"okta-platform-engineering","customfield_10002":"platform-engineer","customfield_10003":"platform-team"}}}'
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     SIG=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "{{secret}}" -hex | awk '{print $2}')
     echo "POST /jsm/{{webhook_id}}"
@@ -135,9 +136,9 @@ send-jsm-bad webhook_id="demo-tenant-a":
 
 # --- Inspection ---
 
-# Inspect the demo CRDs created by the JSM provider.
+# Inspect the SAMLGroupMappings created by the JSM provider.
 get-mappings:
-    kubectl --context kind-{{kind_name}} -n demo-targets get webhookmappings -o yaml
+    kubectl --context kind-{{kind_name}} -n wiz-operator get samlgroupmappings -o yaml
 
 # Open the Prometheus UI.
 prom:

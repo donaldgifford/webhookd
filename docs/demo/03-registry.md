@@ -35,11 +35,12 @@ type BackendConfig any
 // Every concrete request type implements it and the receiving Backend
 // type-asserts to the type it knows how to handle.
 //
-// Example: jsm.Provider produces a *k8sbackend.MappingRequest; the
-// k8sbackend.Backend asserts to that type and applies the embedded CR.
+// Example: jsm.Provider produces a *jsm.SAMLGroupMappingRequest; the
+// k8sbackend.Backend asserts to that type and applies the embedded
+// SAMLGroupMapping CR.
 type BackendRequest interface {
     // Kind returns a human-readable string for logging/metrics
-    // (e.g. "k8s.WebhookMapping"). Not used for routing.
+    // (e.g. "wiz.SAMLGroupMapping"). Not used for routing.
     Kind() string
 }
 

@@ -59,11 +59,11 @@ response shaping, and observability cross-cutting in one place.
 webhookd-demo/
 ├── cmd/
 │   ├── webhookd-demo/main.go        # entry point + wiring
-│   └── mock-operator/main.go        # flips Ready=True on demo CRs
+│   └── mock-operator/main.go        # flips Ready=True on SAMLGroupMapping CRs
 ├── internal/
-│   ├── api/v1alpha1/                # demo CRD types (handwritten)
+│   ├── wizapi/v1alpha1/             # Wiz operator CRD types (handwritten stub)
 │   │   ├── groupversion_info.go
-│   │   ├── types.go
+│   │   ├── types.go                 # SAMLGroupMapping, SAMLGroupMappingList
 │   │   └── zz_generated.deepcopy.go
 │   ├── config/                      # HCL2 schema + loader
 │   │   └── config.go
@@ -124,13 +124,13 @@ Go 1.21+), no router (Go 1.22+ ServeMux supports path values).
 By the end of the walkthrough you will have:
 
 - [ ] A working `webhookd-demo` binary that accepts signed JSM payloads
-- [ ] A demo CRD (`WebhookMapping`) installed in a kind cluster
+- [ ] The `SAMLGroupMapping` CRD (`wiz.rtkwlf.io/v1alpha1`) installed in a kind cluster
 - [ ] A mock operator that flips `Ready=True` so the watch step succeeds
 - [ ] Prometheus scraping `:9090/metrics` showing `webhookd_*` metrics
 - [ ] Jaeger displaying traces with spans across HTTP → Provider → Backend → K8s
 - [ ] A multi-arch Docker image built via `docker buildx bake`
 - [ ] A kustomize-deployable variant running in the kind cluster
-- [ ] A signed `curl` smoke test returning a `200 OK` JSM-shaped response
+- [ ] A signed `curl` smoke test returning a `200 OK` JSM-shaped response with a `SAMLGroupMapping` CR landed in the `wiz-operator` namespace
 
 ## Conventions used throughout
 

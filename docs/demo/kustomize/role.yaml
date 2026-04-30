@@ -2,11 +2,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: webhookd-demo
-  namespace: demo-targets
+  namespace: wiz-operator
 rules:
-  - apiGroups: ["demo.webhookd.io"]
-    resources: ["webhookmappings"]
+  - apiGroups: ["wiz.rtkwlf.io"]
+    resources: ["samlgroupmappings"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]
-  - apiGroups: ["demo.webhookd.io"]
-    resources: ["webhookmappings/status"]
+  - apiGroups: ["wiz.rtkwlf.io"]
+    resources: ["samlgroupmappings/status"]
     verbs: ["get", "patch", "update"]

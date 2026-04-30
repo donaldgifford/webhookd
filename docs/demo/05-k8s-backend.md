@@ -1,8 +1,9 @@
 # 05. Kubernetes Backend
 
-The K8s backend takes a `*jsm.MappingRequest` (or any future
+The K8s backend takes a `*jsm.SAMLGroupMappingRequest` (or any future
 `BackendRequest` it learns to handle), Server-Side-Applies it as a
-`WebhookMapping` CR, and watches for `Ready=True` before returning.
+`SAMLGroupMapping` CR (`wiz.rtkwlf.io/v1alpha1`), and watches for
+`Ready=True` before returning.
 
 This is the side-effect side of the architecture. ADR-0005 says SSA;
 ADR-0006 says synchronous response; ADR-0007 says trace-id propagation
@@ -11,7 +12,7 @@ via annotation.
 ## Files in this phase
 
 ```
-internal/api/v1alpha1/
+internal/wizapi/v1alpha1/
 ├── groupversion_info.go
 ├── types.go
 └── zz_generated.deepcopy.go        # handwritten for the demo
@@ -27,16 +28,25 @@ internal/integrations/k8sbackend/
 └── init.go
 ```
 
-## The demo CRD types
+## The Wiz CRD types
 
-A handwritten typed model. Production code generates DeepCopy via
-`controller-gen`; for a demo, ~30 lines of handwritten DeepCopy is
-faster than configuring codegen.
+A handwritten typed model that mirrors the canonical
+[`samlmapping_crd.yaml`](kustomize/crd.yaml). Production code generates
+DeepCopy via `controller-gen`; for a demo, a handful of handwritten
+DeepCopy methods is faster than configuring codegen.
 
-### `internal/api/v1alpha1/groupversion_info.go`
+> **Looking ahead:** when `github.com/donaldgifford/wiz-operator` is
+> ready to import, the stub here can be deleted in favor of upstream
+> types — see [14-upstream-types.md](14-upstream-types.md) for the
+> swap recipe. The shape below mirrors upstream verbatim, so the
+> rest of this demo doesn't need to change when you do.
+
+### `internal/wizapi/v1alpha1/groupversion_info.go`
 
 ```go
-// Package v1alpha1 holds the demo CRD types.
+// Package v1alpha1 holds the Wiz operator CRD types — mirror of
+// what the operator publishes at wiz.rtkwlf.io/v1alpha1. Replace
+// this stub with the real upstream module when it's importable.
 package v1alpha1
 
 import (
@@ -46,7 +56,7 @@ import (
 
 // GroupVersion is the schema.GroupVersion for this API.
 var GroupVersion = schema.GroupVersion{
-    Group:   "demo.webhookd.io",
+    Group:   "wiz.rtkwlf.io",
     Version: "v1alpha1",
 }
 
@@ -57,11 +67,11 @@ var SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
 var AddToScheme = SchemeBuilder.AddToScheme
 
 func init() {
-    SchemeBuilder.Register(&WebhookMapping{}, &WebhookMappingList{})
+    SchemeBuilder.Register(&SAMLGroupMapping{}, &SAMLGroupMappingList{})
 }
 ```
 
-### `internal/api/v1alpha1/types.go`
+### `internal/wizapi/v1alpha1/types.go`
 
 ```go
 package v1alpha1
@@ -71,57 +81,89 @@ import (
     "k8s.io/apimachinery/pkg/runtime"
 )
 
-// WebhookMappingSpec is what the JSM provider produces.
-type WebhookMappingSpec struct {
-    // IdentityProviderID is the upstream identity provider this
-    // mapping applies to.
-    IdentityProviderID string `json:"identityProviderID"`
-    // Role is the role granted by this mapping (e.g. "Editor").
-    Role string `json:"role"`
-    // Project is the target project name.
-    Project string `json:"project"`
+// ProjectReference identifies a Wiz project by K8s CR name or direct ID.
+// Exactly one of Name or ProjectID should be set; if both are empty
+// the operator may treat the entry as invalid.
+type ProjectReference struct {
+    Name      string `json:"name,omitempty"`
+    ProjectID string `json:"projectId,omitempty"`
 }
 
-// WebhookMappingStatus is what the (mock) operator writes back.
-type WebhookMappingStatus struct {
-    // Conditions holds standard Kubernetes status conditions. The
-    // backend watches for `Ready=True` to consider the mapping synced.
-    Conditions []metav1.Condition `json:"conditions,omitempty"`
+// RoleReference identifies a Wiz user role by K8s UserRole CR name
+// or direct Wiz role ID.
+type RoleReference struct {
+    Name   string `json:"name,omitempty"`
+    RoleID string `json:"roleId,omitempty"`
+}
+
+// SAMLGroupMappingSpec is the desired state — what the JSM provider
+// produces and what the K8s backend SSA-applies.
+type SAMLGroupMappingSpec struct {
+    // IdentityProviderID is the Wiz SAML IDP this mapping belongs to.
+    // Comes from the K8s backend's per-instance config (one IDP per
+    // tenant), not from the JSM payload.
+    IdentityProviderID string `json:"identityProviderId"`
+
+    // ProviderGroupID is the Okta group ID from the JSM custom field.
+    ProviderGroupID string `json:"providerGroupId"`
+
+    // Description is a human-readable description (typically the
+    // JSM issue summary).
+    Description string `json:"description,omitempty"`
+
+    // RoleRef references the Wiz user role to assign.
+    RoleRef RoleReference `json:"roleRef"`
+
+    // ProjectRefs is a list of project references scoping the mapping.
+    // Empty means unscoped (per the Wiz operator's semantics).
+    ProjectRefs []ProjectReference `json:"projectRefs,omitempty"`
+}
+
+// SAMLGroupMappingStatus is the observed state — what the operator
+// writes back. The backend watches for `Ready=True` to consider the
+// mapping synced.
+type SAMLGroupMappingStatus struct {
+    Conditions         []metav1.Condition `json:"conditions,omitempty"`
+    LastSyncTime       *metav1.Time       `json:"lastSyncTime,omitempty"`
+    ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+    SpecHash           string             `json:"specHash,omitempty"`
+    WizResourceID      string             `json:"wizResourceId,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// WebhookMapping is the demo CRD.
-type WebhookMapping struct {
+// SAMLGroupMapping is the demo's target CR (mirror of
+// wiz.rtkwlf.io/v1alpha1.SAMLGroupMapping).
+type SAMLGroupMapping struct {
     metav1.TypeMeta   `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    Spec   WebhookMappingSpec   `json:"spec,omitempty"`
-    Status WebhookMappingStatus `json:"status,omitempty"`
+    Spec   SAMLGroupMappingSpec   `json:"spec,omitempty"`
+    Status SAMLGroupMappingStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// WebhookMappingList contains a list of WebhookMapping.
-type WebhookMappingList struct {
+// SAMLGroupMappingList contains a list of SAMLGroupMapping.
+type SAMLGroupMappingList struct {
     metav1.TypeMeta `json:",inline"`
     metav1.ListMeta `json:"metadata,omitempty"`
-    Items           []WebhookMapping `json:"items"`
+    Items           []SAMLGroupMapping `json:"items"`
 }
 
 // DeepCopyObject implements runtime.Object.
-func (in *WebhookMapping) DeepCopyObject() runtime.Object {
+func (in *SAMLGroupMapping) DeepCopyObject() runtime.Object {
     return in.DeepCopy()
 }
 
 // DeepCopyObject implements runtime.Object.
-func (in *WebhookMappingList) DeepCopyObject() runtime.Object {
+func (in *SAMLGroupMappingList) DeepCopyObject() runtime.Object {
     return in.DeepCopy()
 }
 ```
 
-### `internal/api/v1alpha1/zz_generated.deepcopy.go`
+### `internal/wizapi/v1alpha1/zz_generated.deepcopy.go`
 
 ```go
 // DeepCopy code is normally generated by controller-gen. Hand-rolled
@@ -131,26 +173,36 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // DeepCopyInto copies the receiver into out.
-func (in *WebhookMapping) DeepCopyInto(out *WebhookMapping) {
+func (in *SAMLGroupMapping) DeepCopyInto(out *SAMLGroupMapping) {
     *out = *in
     out.TypeMeta = in.TypeMeta
     in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-    out.Spec = in.Spec
+    in.Spec.DeepCopyInto(&out.Spec)
     in.Status.DeepCopyInto(&out.Status)
 }
 
 // DeepCopy returns a deep copy of the receiver.
-func (in *WebhookMapping) DeepCopy() *WebhookMapping {
+func (in *SAMLGroupMapping) DeepCopy() *SAMLGroupMapping {
     if in == nil {
         return nil
     }
-    out := new(WebhookMapping)
+    out := new(SAMLGroupMapping)
     in.DeepCopyInto(out)
     return out
 }
 
+// DeepCopyInto copies the spec, including ProjectRefs.
+func (in *SAMLGroupMappingSpec) DeepCopyInto(out *SAMLGroupMappingSpec) {
+    *out = *in
+    out.RoleRef = in.RoleRef
+    if in.ProjectRefs != nil {
+        out.ProjectRefs = make([]ProjectReference, len(in.ProjectRefs))
+        copy(out.ProjectRefs, in.ProjectRefs)
+    }
+}
+
 // DeepCopyInto copies the status conditions slice element-by-element.
-func (in *WebhookMappingStatus) DeepCopyInto(out *WebhookMappingStatus) {
+func (in *SAMLGroupMappingStatus) DeepCopyInto(out *SAMLGroupMappingStatus) {
     *out = *in
     if in.Conditions != nil {
         out.Conditions = make([]metav1.Condition, len(in.Conditions))
@@ -158,15 +210,19 @@ func (in *WebhookMappingStatus) DeepCopyInto(out *WebhookMappingStatus) {
             in.Conditions[i].DeepCopyInto(&out.Conditions[i])
         }
     }
+    if in.LastSyncTime != nil {
+        t := in.LastSyncTime.DeepCopy()
+        out.LastSyncTime = &t
+    }
 }
 
 // DeepCopyInto copies the receiver into out.
-func (in *WebhookMappingList) DeepCopyInto(out *WebhookMappingList) {
+func (in *SAMLGroupMappingList) DeepCopyInto(out *SAMLGroupMappingList) {
     *out = *in
     out.TypeMeta = in.TypeMeta
     in.ListMeta.DeepCopyInto(&out.ListMeta)
     if in.Items != nil {
-        out.Items = make([]WebhookMapping, len(in.Items))
+        out.Items = make([]SAMLGroupMapping, len(in.Items))
         for i := range in.Items {
             in.Items[i].DeepCopyInto(&out.Items[i])
         }
@@ -174,11 +230,11 @@ func (in *WebhookMappingList) DeepCopyInto(out *WebhookMappingList) {
 }
 
 // DeepCopy returns a deep copy of the receiver.
-func (in *WebhookMappingList) DeepCopy() *WebhookMappingList {
+func (in *SAMLGroupMappingList) DeepCopy() *SAMLGroupMappingList {
     if in == nil {
         return nil
     }
-    out := new(WebhookMappingList)
+    out := new(SAMLGroupMappingList)
     in.DeepCopyInto(out)
     return out
 }
@@ -186,58 +242,14 @@ func (in *WebhookMappingList) DeepCopy() *WebhookMappingList {
 
 ## The CRD manifest
 
-This is what `kubectl apply -f` installs. We'll commit it to
-`kustomize/crd.yaml` later — the schema is intentionally permissive so
-it doesn't fight with the SSA dance:
+The canonical CRD lives at [`kustomize/crd.yaml`](kustomize/crd.yaml).
+It's the production Wiz operator's CRD copied verbatim — `apiextensions.k8s.io/v1`,
+group `wiz.rtkwlf.io`, kind `SAMLGroupMapping`, with `spec.providerGroupId`,
+`spec.roleRef.{name,roleId}`, `spec.projectRefs[].{name,projectId}`,
+`spec.identityProviderId` (required), `spec.description` (optional).
 
-### `kustomize/crd.yaml` (preview — full file in phase 12)
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: webhookmappings.demo.webhookd.io
-spec:
-  group: demo.webhookd.io
-  scope: Namespaced
-  names:
-    kind: WebhookMapping
-    listKind: WebhookMappingList
-    plural: webhookmappings
-    singular: webhookmapping
-    shortNames: [wm]
-  versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-    schema:
-      openAPIV3Schema:
-        type: object
-        properties:
-          spec:
-            type: object
-            properties:
-              identityProviderID: {type: string}
-              role:               {type: string}
-              project:            {type: string}
-          status:
-            type: object
-            properties:
-              conditions:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    type:               {type: string}
-                    status:             {type: string}
-                    reason:             {type: string}
-                    message:            {type: string}
-                    lastTransitionTime: {type: string}
-                    observedGeneration: {type: integer}
-                  required: [type, status, lastTransitionTime]
-    subresources:
-      status: {}
-```
+The `additionalPrinterColumns` show `Ready` / `Synced` / `Valid` /
+`Age` so `kubectl get samlgroupmappings` is informative without `-o yaml`.
 
 ## Shared scheme + clients
 
@@ -262,7 +274,7 @@ import (
     "k8s.io/client-go/tools/clientcmd"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    demov1alpha1 "github.com/example/webhookd-demo/internal/api/v1alpha1"
+    wizv1alpha1 "github.com/example/webhookd-demo/internal/wizapi/v1alpha1"
 )
 
 // Scheme is the package-level runtime.Scheme — register every API
@@ -271,7 +283,7 @@ var Scheme = apiruntime.NewScheme()
 
 func init() {
     utilruntime.Must(clientgoscheme.AddToScheme(Scheme))
-    utilruntime.Must(demov1alpha1.AddToScheme(Scheme))
+    utilruntime.Must(wizv1alpha1.AddToScheme(Scheme))
 }
 
 // Clients holds the typed controller-runtime client plus the
@@ -327,9 +339,13 @@ import (
 
 // Config is the typed shape of `backend "k8s" { ... }`.
 type Config struct {
-    KubeconfigEnv string `hcl:"kubeconfig_env,optional"`
-    Namespace     string `hcl:"namespace"`
-    SyncTimeout   string `hcl:"sync_timeout,optional"`
+    KubeconfigEnv      string `hcl:"kubeconfig_env,optional"`
+    Namespace          string `hcl:"namespace"`
+    // IdentityProviderID is the tenant-wide Wiz SAML IDP. Populates
+    // spec.identityProviderId on every SAMLGroupMapping the backend
+    // applies for this instance (one IDP per JSM tenant).
+    IdentityProviderID string `hcl:"identity_provider_id"`
+    SyncTimeout        string `hcl:"sync_timeout,optional"`
 }
 
 // SyncTimeoutDuration parses Config.SyncTimeout, defaulting to 20s.
@@ -355,6 +371,13 @@ func decodeConfig(body hcl.Body, ctx *hcl.EvalContext) (Config, hcl.Diagnostics)
             Severity: hcl.DiagError,
             Summary:  "k8s backend",
             Detail:   "namespace is required",
+        }}
+    }
+    if cfg.IdentityProviderID == "" {
+        return Config{}, hcl.Diagnostics{{
+            Severity: hcl.DiagError,
+            Summary:  "k8s backend",
+            Detail:   "identity_provider_id is required",
         }}
     }
     return cfg, nil
@@ -394,26 +417,32 @@ import (
     apierrors "k8s.io/apimachinery/pkg/api/errors"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    demov1alpha1 "github.com/example/webhookd-demo/internal/api/v1alpha1"
     "github.com/example/webhookd-demo/internal/integrations/jsm"
     "github.com/example/webhookd-demo/internal/k8s"
+    wizv1alpha1 "github.com/example/webhookd-demo/internal/wizapi/v1alpha1"
 )
 
-// applyMapping translates a *jsm.MappingRequest into a
-// WebhookMapping CR and Server-Side-Applies it.
+// applyMapping translates a *jsm.SAMLGroupMappingRequest into a
+// SAMLGroupMapping CR and Server-Side-Applies it.
 //
 // Returns the applied object's name + a typed errorClass for the
 // caller to map onto an ExecResult.
-func (b *Backend) applyMapping(ctx context.Context, req *jsm.MappingRequest, cfg Config) (string, errorClass, error) {
-    obj := &demov1alpha1.WebhookMapping{}
-    obj.SetGroupVersionKind(demov1alpha1.GroupVersion.WithKind("WebhookMapping"))
+func (b *Backend) applyMapping(ctx context.Context, req *jsm.SAMLGroupMappingRequest, cfg Config) (string, errorClass, error) {
+    obj := &wizv1alpha1.SAMLGroupMapping{}
+    obj.SetGroupVersionKind(wizv1alpha1.GroupVersion.WithKind("SAMLGroupMapping"))
     obj.SetNamespace(cfg.Namespace)
     obj.SetName(req.IssueKey)
 
-    obj.Spec = demov1alpha1.WebhookMappingSpec{
-        IdentityProviderID: req.IdentityProviderID,
-        Role:               req.Role,
-        Project:            req.Project,
+    obj.Spec = wizv1alpha1.SAMLGroupMappingSpec{
+        IdentityProviderID: cfg.IdentityProviderID,   // backend-config-supplied
+        ProviderGroupID:    req.ProviderGroupID,
+        Description:        req.Description,
+        RoleRef: wizv1alpha1.RoleReference{
+            Name: req.RoleName,
+        },
+        ProjectRefs: []wizv1alpha1.ProjectReference{
+            {Name: req.ProjectName},
+        },
     }
 
     annotations := map[string]string{
@@ -493,18 +522,18 @@ import (
     "k8s.io/apimachinery/pkg/watch"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    demov1alpha1 "github.com/example/webhookd-demo/internal/api/v1alpha1"
+    wizv1alpha1 "github.com/example/webhookd-demo/internal/wizapi/v1alpha1"
 )
 
 // errTimeout is returned when the watch deadline elapses before
 // Ready=True is observed.
 var errTimeout = errors.New("watch timeout")
 
-// waitForReady opens a namespace-scoped Watch on WebhookMapping and
+// waitForReady opens a namespace-scoped Watch on SAMLGroupMapping and
 // returns once the named object reports Ready=True. Times out on the
 // context deadline.
 func (b *Backend) waitForReady(ctx context.Context, name, namespace string) error {
-    list := &demov1alpha1.WebhookMappingList{}
+    list := &wizv1alpha1.SAMLGroupMappingList{}
     w, err := b.clients.Ctrl.Watch(
         ctx,
         list,
@@ -527,7 +556,7 @@ func (b *Backend) waitForReady(ctx context.Context, name, namespace string) erro
             if ev.Type == watch.Error {
                 return fmt.Errorf("watch error: %v", ev.Object)
             }
-            obj, ok := ev.Object.(*demov1alpha1.WebhookMapping)
+            obj, ok := ev.Object.(*wizv1alpha1.SAMLGroupMapping)
             if !ok {
                 continue
             }
@@ -606,7 +635,7 @@ func (b *Backend) Execute(ctx context.Context, req webhook.BackendRequest, cfg w
             fmt.Sprintf("k8s backend: unexpected config type %T", cfg))
     }
 
-    mr, ok := req.(*jsm.MappingRequest)
+    mr, ok := req.(*jsm.SAMLGroupMappingRequest)
     if !ok {
         return errResult(http.StatusBadRequest, "UnsupportedRequest",
             fmt.Sprintf("k8s backend: unsupported request type %T", req))
@@ -641,7 +670,7 @@ func (b *Backend) Execute(ctx context.Context, req webhook.BackendRequest, cfg w
         Kind:       webhook.ResultSuccess,
         HTTPStatus: http.StatusOK,
         Reason:     "Synced",
-        Detail:     fmt.Sprintf("WebhookMapping/%s reached Ready=True", name),
+        Detail:     fmt.Sprintf("SAMLGroupMapping/%s reached Ready=True", name),
     }
 }
 
@@ -771,12 +800,12 @@ ships a tiny stub.
 ### `cmd/mock-operator/main.go`
 
 ```go
-// Mock operator: every 2s, scan WebhookMapping CRs in the configured
+// Mock operator: every 2s, scan SAMLGroupMapping CRs in the configured
 // namespace; if one lacks Ready=True, write it.
 //
 // Not a real operator — no informers, no rate limiting, no leader
-// election. Exists only so the K8s backend's watch step terminates
-// during the demo.
+// election, no upstream Wiz reconciliation. Exists only so the K8s
+// backend's watch step terminates during the demo.
 package main
 
 import (
@@ -791,14 +820,14 @@ import (
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    demov1alpha1 "github.com/example/webhookd-demo/internal/api/v1alpha1"
     "github.com/example/webhookd-demo/internal/k8s"
+    wizv1alpha1 "github.com/example/webhookd-demo/internal/wizapi/v1alpha1"
 )
 
 func main() {
     namespace := os.Getenv("DEMO_NAMESPACE")
     if namespace == "" {
-        namespace = "demo-targets"
+        namespace = "wiz-operator"
     }
     kubeconfig := os.Getenv("KUBECONFIG")
 
@@ -829,27 +858,27 @@ func main() {
 }
 
 func tick(ctx context.Context, c client.Client, namespace string) error {
-    var list demov1alpha1.WebhookMappingList
+    var list wizv1alpha1.SAMLGroupMappingList
     if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
         return fmt.Errorf("list: %w", err)
     }
     for i := range list.Items {
-        wm := &list.Items[i]
-        if alreadyReady(wm) {
+        sgm := &list.Items[i]
+        if alreadyReady(sgm) {
             continue
         }
-        wm.Status.Conditions = upsertReady(wm.Status.Conditions)
-        if err := c.Status().Update(ctx, wm); err != nil {
-            slog.Warn("update status", "name", wm.Name, "err", err)
+        sgm.Status.Conditions = upsertReady(sgm.Status.Conditions)
+        if err := c.Status().Update(ctx, sgm); err != nil {
+            slog.Warn("update status", "name", sgm.Name, "err", err)
             continue
         }
-        slog.Info("flipped Ready=True", "name", wm.Name)
+        slog.Info("flipped Ready=True", "name", sgm.Name)
     }
     return nil
 }
 
-func alreadyReady(wm *demov1alpha1.WebhookMapping) bool {
-    for _, c := range wm.Status.Conditions {
+func alreadyReady(sgm *wizv1alpha1.SAMLGroupMapping) bool {
+    for _, c := range sgm.Status.Conditions {
         if c.Type == "Ready" && c.Status == metav1.ConditionTrue {
             return true
         }
