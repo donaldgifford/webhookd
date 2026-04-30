@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhookd-demo
+  labels:
+    app: webhookd-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhookd-demo
+  template:
+    metadata:
+      labels:
+        app: webhookd-demo
+    spec:
+      serviceAccountName: webhookd-demo
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: webhookd-demo
+          image: webhookd-demo:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/webhookd/webhookd.hcl"]
+          ports:
+            - name: public
+              containerPort: 8080
+            - name: admin
+              containerPort: 9090
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: WEBHOOK_DEMO_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: webhookd-signing
+                  key: WEBHOOK_DEMO_SECRET
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/webhookd
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: webhookd-config

@@ -1,0 +1,7 @@
+# Local-only — secrets, build artifacts, copy-along app code.
+kustomize/secret.yaml
+build/
+app/
+
+# Macroses if a reader uses an editor.
+.DS_Store

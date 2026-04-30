@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhookd-demo
+spec:
+  type: NodePort
+  selector:
+    app: webhookd-demo
+  ports:
+    - name: public
+      port: 8080
+      targetPort: public
+      nodePort: 30080
+    - name: admin
+      port: 9090
+      targetPort: admin
+      nodePort: 30090

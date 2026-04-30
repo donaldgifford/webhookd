@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: webhookd-demo
+
+resources:
+  - namespace.yaml
+  - crd.yaml
+  - serviceaccount.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - mock-operator.yaml
+
+images:
+  - name: webhookd-demo
+    newName: webhookd-demo
+    newTag: dev
+  - name: mock-operator
+    newName: mock-operator
+    newTag: dev

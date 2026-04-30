@@ -1,0 +1,165 @@
+# webhookd-demo task runner.
+#
+# Assumes the demo Go project lives in `./app/` (a sibling of this
+# justfile). Adjust `app_dir` if you put the code elsewhere.
+#
+# Targets in dependency order:
+#   1. just kind-up      (one-time, creates kind cluster + CRD)
+#   2. just dev-stack    (one-time, brings up otel-collector/prometheus/jaeger)
+#   3. just mock-operator (in a second terminal — flips Ready=True)
+#   4. just run          (the binary itself)
+#   5. just send-jsm     (smoke-test the running stack)
+
+set shell := ["bash", "-uc"]
+set dotenv-load := false
+
+app_dir       := env_var_or_default("APP_DIR", "./app")
+kind_name     := "webhookd-demo"
+secret        := env_var_or_default("WEBHOOK_DEMO_SECRET", "topsecret")
+kubeconfig    := env_var_or_default("KUBECONFIG", env_var("HOME") + "/.kube/config")
+
+# List recipes (default).
+default:
+    @just --list
+
+# --- Kubernetes (kind) ---
+
+# Create kind cluster with port-forward + apply demo CRD + namespaces.
+kind-up:
+    kind create cluster --config kind-config.yaml --name {{kind_name}}
+    kubectl --context kind-{{kind_name}} apply -f kustomize/crd.yaml
+    kubectl --context kind-{{kind_name}} create namespace demo-targets --dry-run=client -o yaml | kubectl apply -f -
+
+# Tear down the kind cluster.
+kind-down:
+    kind delete cluster --name {{kind_name}}
+
+# --- Local dev stack (docker-compose) ---
+
+# Bring up otel-collector + prometheus + jaeger.
+dev-stack:
+    docker compose up -d
+    @echo "Prometheus: http://localhost:9091"
+    @echo "Jaeger:     http://localhost:16686"
+
+# Tear down the docker-compose stack.
+dev-stack-down:
+    docker compose down
+
+# --- Build ---
+
+# Compile the binary natively.
+build:
+    cd {{app_dir}} && go build -o ../build/webhookd-demo ./cmd/webhookd-demo
+    cd {{app_dir}} && go build -o ../build/mock-operator ./cmd/mock-operator
+
+# Build container images via docker buildx bake (default group).
+bake:
+    docker buildx bake
+
+# Build multi-arch images for CI.
+bake-ci:
+    docker buildx bake ci
+
+# Load locally-built images into the kind cluster.
+kind-load: bake
+    kind load docker-image webhookd-demo:dev --name {{kind_name}}
+    kind load docker-image mock-operator:dev --name {{kind_name}}
+
+# --- Run ---
+
+# Run webhookd-demo natively. KUBECONFIG is taken from your shell env;
+# the binary points at the kind cluster by default.
+run:
+    cd {{app_dir}} && \
+    WEBHOOK_DEMO_SECRET={{secret}} \
+    KUBECONFIG={{kubeconfig}} \
+    LOG_LEVEL=info \
+    go run ./cmd/webhookd-demo --config ../webhookd.hcl
+
+# Run the mock operator in the foreground. Run in a separate terminal.
+mock-operator:
+    cd {{app_dir}} && \
+    KUBECONFIG={{kubeconfig}} \
+    DEMO_NAMESPACE=demo-targets \
+    go run ./cmd/mock-operator
+
+# Run a single Go test package (PKG=./internal/integrations/jsm).
+test PKG="./..."
+    cd {{app_dir}} && go test -race -v {{PKG}}
+
+# --- Deploy (kustomize) ---
+
+# Apply the kustomize manifests to the kind cluster. Assumes secret.yaml exists.
+deploy:
+    @if [ ! -f kustomize/secret.yaml ]; then \
+      echo "ERROR: copy kustomize/secret.yaml.example -> kustomize/secret.yaml first"; \
+      exit 1; \
+    fi
+    kubectl --context kind-{{kind_name}} apply -k kustomize/
+
+# Tear down the kustomize deployment.
+undeploy:
+    kubectl --context kind-{{kind_name}} delete -k kustomize/ --ignore-not-found
+
+# Tail webhookd-demo pod logs.
+logs:
+    kubectl --context kind-{{kind_name}} -n webhookd-demo logs -l app=webhookd-demo -f
+
+# --- Smoke test ---
+
+# Send a signed JSM payload. Defaults to the demo-tenant-a webhook id.
+send-jsm webhook_id="demo-tenant-a":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PAYLOAD='{"issue":{"key":"ABC-123","fields":{"status":{"name":"Approved"},"customfield_10001":"wiz-tenant-a","customfield_10002":"Editor","customfield_10003":"demo-project"}}}'
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    SIG=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "{{secret}}" -hex | awk '{print $2}')
+    echo "POST /jsm/{{webhook_id}}"
+    curl -sS -X POST "http://localhost:8080/jsm/{{webhook_id}}" \
+      -H "Content-Type: application/json" \
+      -H "X-Hub-Signature-256: sha256=$SIG" \
+      -H "X-Webhook-Timestamp: $TIMESTAMP" \
+      -d "$PAYLOAD" | jq
+
+# Send a payload that intentionally fails the signature check.
+send-jsm-bad webhook_id="demo-tenant-a":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PAYLOAD='{"issue":{"key":"ABC-1","fields":{"status":{"name":"Approved"}}}}'
+    curl -sS -X POST "http://localhost:8080/jsm/{{webhook_id}}" \
+      -H "Content-Type: application/json" \
+      -H "X-Hub-Signature-256: sha256=deadbeef" \
+      -H "X-Webhook-Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      -d "$PAYLOAD" | jq
+
+# --- Inspection ---
+
+# Inspect the demo CRDs created by the JSM provider.
+get-mappings:
+    kubectl --context kind-{{kind_name}} -n demo-targets get webhookmappings -o yaml
+
+# Open the Prometheus UI.
+prom:
+    @open http://localhost:9091 || xdg-open http://localhost:9091
+
+# Open the Jaeger UI.
+jaeger:
+    @open http://localhost:16686 || xdg-open http://localhost:16686
+
+# --- Cleanup ---
+
+# Tear everything down.
+clean: dev-stack-down kind-down
+    rm -rf build/
+
+# --- Convenience: full bring-up ---
+
+# One-shot: kind cluster + dev stack. Run mock-operator and `run`
+# in separate terminals afterward.
+up: kind-up dev-stack
+    @echo
+    @echo "Now run, in separate terminals:"
+    @echo "  just mock-operator"
+    @echo "  just run"
+    @echo "  just send-jsm"
