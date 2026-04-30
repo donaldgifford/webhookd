@@ -194,7 +194,6 @@ func (in *SAMLGroupMapping) DeepCopy() *SAMLGroupMapping {
 // DeepCopyInto copies the spec, including ProjectRefs.
 func (in *SAMLGroupMappingSpec) DeepCopyInto(out *SAMLGroupMappingSpec) {
     *out = *in
-    out.RoleRef = in.RoleRef
     if in.ProjectRefs != nil {
         out.ProjectRefs = make([]ProjectReference, len(in.ProjectRefs))
         copy(out.ProjectRefs, in.ProjectRefs)
@@ -211,8 +210,7 @@ func (in *SAMLGroupMappingStatus) DeepCopyInto(out *SAMLGroupMappingStatus) {
         }
     }
     if in.LastSyncTime != nil {
-        t := in.LastSyncTime.DeepCopy()
-        out.LastSyncTime = &t
+        out.LastSyncTime = in.LastSyncTime.DeepCopy()
     }
 }
 
