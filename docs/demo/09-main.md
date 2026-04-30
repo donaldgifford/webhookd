@@ -27,7 +27,6 @@ import (
     "context"
     "errors"
     "flag"
-    "fmt"
     "log/slog"
     "net/http"
     "os"
@@ -254,6 +253,16 @@ func maxBodyBytes(cfg *config.File) int64 {
     return cfg.Defaults.MaxBodyBytes
 }
 
+func rateLimit(cfg *config.File) httpx.RateLimiterConfig {
+    if cfg.Runtime.RateLimit == nil {
+        return httpx.RateLimiterConfig{RPS: 50, Burst: 100}
+    }
+    return httpx.RateLimiterConfig{
+        RPS:   cfg.Runtime.RateLimit.RPS,
+        Burst: cfg.Runtime.RateLimit.Burst,
+    }
+}
+
 func shutdownTimeout(cfg *config.File) time.Duration {
     if cfg.Runtime.ShutdownTimeout == "" {
         return 30 * time.Second
@@ -264,11 +273,6 @@ func shutdownTimeout(cfg *config.File) time.Duration {
     }
     return d
 }
-
-// fmt is imported transitively; the explicit reference here keeps the
-// import sticky for production parity (early lint runs would drop it
-// otherwise).
-var _ = fmt.Sprintf
 ```
 
 ## Why all the tiny helpers?

@@ -328,7 +328,6 @@ func NewClients(kubeconfigPath string) (*Clients, error) {
 package k8sbackend
 
 import (
-    "fmt"
     "time"
 
     "github.com/hashicorp/hcl/v2"
@@ -384,21 +383,7 @@ func decodeConfig(body hcl.Body, ctx *hcl.EvalContext) (Config, hcl.Diagnostics)
 // fieldOwner is the SSA field-manager identifier. K8s uses this to
 // track ownership of fields on the object.
 const fieldOwner = "webhookd-demo"
-
-// withSyncTimeout returns a context derived from ctx with the
-// configured sync timeout. Caller must call cancel().
-func withSyncTimeout(ctx context.Context, cfg Config) (context.Context, func()) {
-    return context.WithTimeout(ctx, cfg.SyncTimeoutDuration())
-}
-
-// (intentionally unused stub — illustrates the helper pattern; remove
-// if you don't end up needing it.)
-var _ = fmt.Sprintf
-var _ context.Context = nil
 ```
-
-> Drop the bottom two `var _ = ...` lines once the rest of the package
-> compiles — they're there only so this snippet stands alone.
 
 ## Apply path (SSA)
 
