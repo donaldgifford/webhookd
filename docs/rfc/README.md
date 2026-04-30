@@ -33,4 +33,5 @@ docz create rfc "Your RFC Title"
 
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
+| RFC-0001 | Generalize webhookd to Provider x Backend with Multi-Tenant Routing | Draft | 2026-04-30 | Donald Gifford | [0001-generalize-webhookd-to-provider-x-backend-with-multi-tenant.md](0001-generalize-webhookd-to-provider-x-backend-with-multi-tenant.md) |
 <!-- END DOCZ AUTO-GENERATED -->

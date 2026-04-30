@@ -38,4 +38,7 @@ docz create adr "Your ADR Title"
 | ADR-0005 | Server-Side Apply for custom resource reconciliation | Accepted | 2026-04-24 | Donald Gifford | [0005-server-side-apply-for-custom-resource-reconciliation.md](0005-server-side-apply-for-custom-resource-reconciliation.md) |
 | ADR-0006 | Synchronous response contract for webhook providers | Accepted | 2026-04-24 | Donald Gifford | [0006-synchronous-response-contract-for-webhook-providers.md](0006-synchronous-response-contract-for-webhook-providers.md) |
 | ADR-0007 | Trace context propagation via CR annotation | Accepted | 2026-04-28 | Donald Gifford | [0007-trace-context-propagation-via-cr-annotation.md](0007-trace-context-propagation-via-cr-annotation.md) |
+| ADR-0008 | Provider-callback pattern over durable queues for long-running work | Proposed | 2026-04-30 | Donald Gifford | [0008-provider-callback-pattern-over-durable-queues-for-long-running.md](0008-provider-callback-pattern-over-durable-queues-for-long-running.md) |
+| ADR-0009 | HCL2 configuration format for multi-tenant instances | Proposed | 2026-04-30 | Donald Gifford | [0009-hcl2-configuration-format-for-multi-tenant-instances.md](0009-hcl2-configuration-format-for-multi-tenant-instances.md) |
+| ADR-0010 | Static integration registration via build-time imports | Proposed | 2026-04-30 | Donald Gifford | [0010-static-integration-registration-via-build-time-imports.md](0010-static-integration-registration-via-build-time-imports.md) |
 <!-- END DOCZ AUTO-GENERATED -->
