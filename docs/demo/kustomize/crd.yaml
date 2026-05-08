@@ -3,9 +3,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: samlgroupmappings.wiz.rtkwlf.io
+  name: samlgroupmappings.wiz.fartlab.dev
 spec:
-  group: wiz.rtkwlf.io
+  group: wiz.fartlab.dev
   names:
     kind: SAMLGroupMapping
     listKind: SAMLGroupMappingList

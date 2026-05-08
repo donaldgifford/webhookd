@@ -9,7 +9,7 @@ base manifests set, intentionally small.
 ```
 docs/demo/kustomize/
 ├── kustomization.yaml
-├── crd.yaml                 # SAMLGroupMapping CRD (wiz.rtkwlf.io/v1alpha1)
+├── crd.yaml                 # SAMLGroupMapping CRD (wiz.fartlab.dev/v1alpha1)
 ├── namespace.yaml
 ├── configmap.yaml           # webhookd.hcl config
 ├── secret.yaml.example      # signing secret stub
@@ -101,7 +101,7 @@ pattern.
 ## crd.yaml
 
 The canonical Wiz operator CRD copied verbatim into
-[`kustomize/crd.yaml`](kustomize/crd.yaml). Group `wiz.rtkwlf.io`,
+[`kustomize/crd.yaml`](kustomize/crd.yaml). Group `wiz.fartlab.dev`,
 kind `SAMLGroupMapping`, with `spec.providerGroupId`,
 `spec.identityProviderId` (required), `spec.roleRef.{name,roleId}`,
 and `spec.projectRefs[].{name,projectId}`. The full file is ~140 lines
@@ -212,10 +212,10 @@ metadata:
   name: webhookd-demo
   namespace: wiz-operator
 rules:
-- apiGroups: ["wiz.rtkwlf.io"]
+- apiGroups: ["wiz.fartlab.dev"]
   resources: ["samlgroupmappings"]
   verbs: ["get", "list", "watch", "create", "patch", "update"]
-- apiGroups: ["wiz.rtkwlf.io"]
+- apiGroups: ["wiz.fartlab.dev"]
   resources: ["samlgroupmappings/status"]
   verbs: ["get", "patch", "update"]
 ```
@@ -407,7 +407,7 @@ kubectl get pods -n webhookd-demo -w
 ## What we proved
 
 - [x] Cross-namespace RBAC pattern (Role in `wiz-operator`, SA in `webhookd-demo`)
-- [x] Canonical Wiz CRD (`wiz.rtkwlf.io/v1alpha1.SAMLGroupMapping`) installed via kustomize
+- [x] Canonical Wiz CRD (`wiz.fartlab.dev/v1alpha1.SAMLGroupMapping`) installed via kustomize
 - [x] Distroless image runs as nonroot under restricted SecurityContext
 - [x] HCL config carried in a ConfigMap; secret in a Secret
 - [x] kind NodePorts expose `:8080` / `:9090` to the host

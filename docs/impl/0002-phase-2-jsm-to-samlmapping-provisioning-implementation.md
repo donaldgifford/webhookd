@@ -820,7 +820,7 @@ README updates that turn this from "code merged" into "shippable."
 | `cmd/webhookd/main_test.go` | Modify | Replace Phase 1 happy-path with full envtest end-to-end. |
 | `deploy/rbac/{role,rolebinding,serviceaccount}.yaml` | Create | Sample RBAC manifests. |
 | `deploy/crds/{samlgroupmapping,project,userrole}.yaml` | Create | envtest CRD fixtures (operator owns canonical). |
-| `docs/examples/samples/*.yaml` | Modify *(done)* | API group changed from `wiz.rtkwlf.io` to `wiz.webhookd.io`. |
+| `docs/examples/samples/*.yaml` | Modify *(done)* | API group changed from `wiz.fartlab.dev` to `wiz.webhookd.io`. |
 | `docs/adr/0007-trace-context-propagation-via-cr-annotation.md` | Create | Trace-id annotation contract for cross-boundary tracing. |
 | `README.md`, `CLAUDE.md` | Modify | Phase 2 status + JSM/deployment sections. |
 
@@ -894,7 +894,7 @@ reasoning rather than just the outcome (mirrors IMPL-0001's pattern).
    stub deletion.
 2. **CRD shape locked from `docs/examples/samples/`.** Kind
    `SAMLGroupMapping` (not `SAMLMapping`); group `wiz.webhookd.io`
-   (renamed from `wiz.rtkwlf.io` — samples updated in this session).
+   (renamed from `wiz.fartlab.dev` — samples updated in this session).
    Spec carries `identityProviderId` (static config),
    `providerGroupId` (from JSM), `description` (derived: "Provisioned
    from JSM `<key>`"), `roleRef.name` (from JSM, references a

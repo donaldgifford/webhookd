@@ -1,5 +1,5 @@
 ---
-apiVersion: wiz.rtkwlf.io/v1alpha1
+apiVersion: wiz.fartlab.dev/v1alpha1
 kind: SAMLGroupMapping
 metadata:
   labels:

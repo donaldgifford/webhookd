@@ -124,7 +124,7 @@ Go 1.21+), no router (Go 1.22+ ServeMux supports path values).
 By the end of the walkthrough you will have:
 
 - [ ] A working `webhookd-demo` binary that accepts signed JSM payloads
-- [ ] The `SAMLGroupMapping` CRD (`wiz.rtkwlf.io/v1alpha1`) installed in a kind cluster
+- [ ] The `SAMLGroupMapping` CRD (`wiz.fartlab.dev/v1alpha1`) installed in a kind cluster
 - [ ] A mock operator that flips `Ready=True` so the watch step succeeds
 - [ ] Prometheus scraping `:9090/metrics` showing `webhookd_*` metrics
 - [ ] Jaeger displaying traces with spans across HTTP → Provider → Backend → K8s
