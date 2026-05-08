@@ -2,7 +2,7 @@
 
 The K8s backend takes a `*jsm.SAMLGroupMappingRequest` (or any future
 `BackendRequest` it learns to handle), Server-Side-Applies it as a
-`SAMLGroupMapping` CR (`wiz.rtkwlf.io/v1alpha1`), and watches for
+`SAMLGroupMapping` CR (`wiz.fartlab.dev/v1alpha1`), and watches for
 `Ready=True` before returning.
 
 This is the side-effect side of the architecture. ADR-0005 says SSA;
@@ -45,7 +45,7 @@ DeepCopy methods is faster than configuring codegen.
 
 ```go
 // Package v1alpha1 holds the Wiz operator CRD types — mirror of
-// what the operator publishes at wiz.rtkwlf.io/v1alpha1. Replace
+// what the operator publishes at wiz.fartlab.dev/v1alpha1. Replace
 // this stub with the real upstream module when it's importable.
 package v1alpha1
 
@@ -56,7 +56,7 @@ import (
 
 // GroupVersion is the schema.GroupVersion for this API.
 var GroupVersion = schema.GroupVersion{
-    Group:   "wiz.rtkwlf.io",
+    Group:   "wiz.fartlab.dev",
     Version: "v1alpha1",
 }
 
@@ -134,7 +134,7 @@ type SAMLGroupMappingStatus struct {
 // +kubebuilder:subresource:status
 
 // SAMLGroupMapping is the demo's target CR (mirror of
-// wiz.rtkwlf.io/v1alpha1.SAMLGroupMapping).
+// wiz.fartlab.dev/v1alpha1.SAMLGroupMapping).
 type SAMLGroupMapping struct {
     metav1.TypeMeta   `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -242,7 +242,7 @@ func (in *SAMLGroupMappingList) DeepCopy() *SAMLGroupMappingList {
 
 The canonical CRD lives at [`kustomize/crd.yaml`](kustomize/crd.yaml).
 It's the production Wiz operator's CRD copied verbatim — `apiextensions.k8s.io/v1`,
-group `wiz.rtkwlf.io`, kind `SAMLGroupMapping`, with `spec.providerGroupId`,
+group `wiz.fartlab.dev`, kind `SAMLGroupMapping`, with `spec.providerGroupId`,
 `spec.roleRef.{name,roleId}`, `spec.projectRefs[].{name,projectId}`,
 `spec.identityProviderId` (required), `spec.description` (optional).
 

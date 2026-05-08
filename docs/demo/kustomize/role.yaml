@@ -4,9 +4,9 @@ metadata:
   name: webhookd-demo
   namespace: wiz-operator
 rules:
-  - apiGroups: ["wiz.rtkwlf.io"]
+  - apiGroups: ["wiz.fartlab.dev"]
     resources: ["samlgroupmappings"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]
-  - apiGroups: ["wiz.rtkwlf.io"]
+  - apiGroups: ["wiz.fartlab.dev"]
     resources: ["samlgroupmappings/status"]
     verbs: ["get", "patch", "update"]

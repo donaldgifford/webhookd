@@ -7,7 +7,7 @@ Pure functions — no I/O — except for `VerifySignature`, which reads a
 secret from the environment.
 
 The CR shape is the canonical Wiz operator type at
-`wiz.rtkwlf.io/v1alpha1`; see [samlmapping.example.yaml](samlmapping.example.yaml)
+`wiz.fartlab.dev/v1alpha1`; see [samlmapping.example.yaml](samlmapping.example.yaml)
 for the target shape.
 
 ## Files in this phase

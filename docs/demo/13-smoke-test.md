@@ -66,7 +66,7 @@ kubectl get samlgroupmapping -n wiz-operator abc-123 -o yaml
 Should show:
 
 ```yaml
-apiVersion: wiz.rtkwlf.io/v1alpha1
+apiVersion: wiz.fartlab.dev/v1alpha1
 kind: SAMLGroupMapping
 metadata:
   name: abc-123
