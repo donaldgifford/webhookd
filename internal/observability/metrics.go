@@ -56,10 +56,13 @@ type Metrics struct {
 	// that's how a misconfigured JSM custom-field shows up.
 	JSMPayloadParseErrors *prometheus.CounterVec
 
-	// JSMNoopTotal counts NoopAction returns by the actual ticket
-	// status that fired the webhook. Useful for spotting misconfigured
-	// JSM automation rules ("why are we getting 500 noop's a day?").
-	JSMNoopTotal *prometheus.CounterVec
+	// JSMNoopTotal counts NoopAction returns. We deliberately do NOT
+	// label by ticket status: that field is user-controlled per tenant
+	// and a noisy or malicious tenant could produce unbounded
+	// Prometheus label cardinality. Operators wanting per-status
+	// breakdown should query the JSM provider's spans/logs instead.
+	// See INV-0003 §F-14.
+	JSMNoopTotal prometheus.Counter
 
 	// JSMResponseTotal counts dispatcher responses by HTTP status
 	// code. Phase 1's HTTPRequests counter already covers this for
@@ -227,12 +230,11 @@ func addPhase2Metrics(m *Metrics) {
 		},
 		[]string{"reason"},
 	)
-	m.JSMNoopTotal = prometheus.NewCounterVec(
+	m.JSMNoopTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "webhookd_jsm_noop_total",
-			Help: "JSM webhooks that returned NoopAction, by ticket status.",
+			Help: "JSM webhooks that returned NoopAction. Unlabeled to bound cardinality; per-status breakdown lives in spans.",
 		},
-		[]string{"trigger_status"},
 	)
 	m.JSMResponseTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{

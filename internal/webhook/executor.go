@@ -414,6 +414,14 @@ func applyOutcome(obj *wizapi.SAMLGroupMapping) string {
 // Keep this deterministic — apply-step errors are how we surface
 // permanent rejections (422 / 500); over-classifying as transient
 // would let JSM retry forever into a wall.
+//
+// The default arm returns ResultInternalError rather than
+// ResultTransientFailure: an error the K8s SDK doesn't classify as
+// IsServerTimeout / IsServiceUnavailable / IsTooManyRequests / IsConflict
+// is most likely a deterministic bug (nil-pointer, malformed REST
+// config, scheme drift). Calling it transient invites JSM retry storms
+// against an issue a retry won't fix; surfacing 500 pages a human
+// instead. See INV-0003 §F-11.
 func classifyK8sErr(err error, namespace, name string) ExecResult {
 	switch {
 	case apierrors.IsForbidden(err):
@@ -436,7 +444,7 @@ func classifyK8sErr(err error, namespace, name string) ExecResult {
 		}
 	default:
 		return ExecResult{
-			Kind: ResultTransientFailure, Reason: err.Error(),
+			Kind: ResultInternalError, Reason: err.Error(),
 			CRName: name, Namespace: namespace,
 		}
 	}

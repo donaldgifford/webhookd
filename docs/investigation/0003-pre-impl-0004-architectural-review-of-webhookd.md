@@ -136,10 +136,11 @@ These are the structural issues that will compound badly when adding a second Pr
 
 ### Theme 3 — Error-handling architecture
 
-**F-11 — `classifyK8sErr` default returns `ResultTransientFailure`** (medium)
+**F-11 — `classifyK8sErr` default returns `ResultTransientFailure`** (medium) — ✅ **Resolved in PR #17**
 - Location: `internal/webhook/executor.go:417–443`.
 - Problem: Truly unknown errors (nil-pointer-derived, client-build failures, etc.) currently route to HTTP 503 + JSM retry. JSM will retry forever on a deterministic bug. The correct mapping for an unknown error is HTTP 500 + page a human.
 - Approach: Change the `default` arm to `ResultInternalError`. Keep explicit cases for `IsServerTimeout`, `IsServiceUnavailable`, `IsTooManyRequests`, and `IsConflict` mapped to `ResultTransientFailure`. Anything not explicitly transient is internal.
+- **Resolution:** Default arm now returns `ResultInternalError`; `TestClassifyK8sErr` updated. The `classifyK8sErr` doc comment documents the rationale inline.
 
 **F-12 — Two parallel `classify*Err` helpers will become four** (low)
 - Location: `internal/webhook/executor.go:413` (`classifyK8sErr`); `internal/webhook/dispatcher.go:183` (`classifyProviderErr`).
@@ -153,10 +154,11 @@ These are the structural issues that will compound badly when adding a second Pr
 - Problem: Every package that records *any* metric takes `*Metrics` and gets compile-time exposure to all 14. Adding a metric forces a rebuild of every consumer. Tests must stand up the full `NewMetrics` machinery to exercise one counter.
 - Approach: Split into narrow consumer-side interfaces — `HTTPMetrics`, `K8sMetrics`, `JSMMetrics` (or `ProviderMetrics`) — each package accepting only the interface it uses. Concrete `Metrics` implements all of them; no behavioral change. Materially improves testability.
 
-**F-14 — `JSMNoopTotal` label is unbounded user-controlled string** (HIGH — Prometheus cardinality risk)
+**F-14 — `JSMNoopTotal` label is unbounded user-controlled string** (HIGH — Prometheus cardinality risk) — ✅ **Resolved in PR #17**
 - Location: emission `internal/webhook/jsm/provider.go:144`; metric def `internal/observability/metrics.go:238` — `webhookd_jsm_noop_total{trigger_status}`.
 - Problem: Label value is `payload.Status()`, the raw JSM ticket status string. JSM tenants can rename or create arbitrary workflow states. A noisy or malicious tenant produces unbounded label cardinality → Prometheus OOM.
 - Approach: Cap label values to a small allow-list (the configured `TriggerStatus` plus an `__other__` bucket), or hash/truncate strings above a safe length. **This is the only "unsafe today" finding in the review.**
+- **Resolution:** Dropped the label entirely — `JSMNoopTotal` is now a plain `prometheus.Counter`. The "allow-list with `__other__` bucket" approach turned out to be hollow (noop only fires when `status != TriggerStatus`, so the trigger value would never be the label). Per-status breakdown moves to spans / structured logs (status is already in `NoopAction.Reason`). Metric name unchanged — only the label dropped — minor backward-incompatible schema change accepted since the metric was added in IMPL-0002 Phase 7 with no known dashboards bound to the label.
 
 **F-15 — Metrics construction split for funlen, not coherence** (low)
 - Location: `internal/observability/metrics.go:102–201` (`NewMetrics`) plus `:207–244` (`addPhase2Metrics`).
@@ -287,6 +289,8 @@ A handful of straightforward fixes the linter doesn't enforce. None blocking; bu
 
 **Answer: Confirmed.** There is meaningful pre-IMPL-0004 cleanup, but the scope is bounded — 34 narrative findings + 10 style nits (44 total), of which 6 are high-severity (all in Theme 1), 11 are medium, and the rest are low. No issue is catastrophic; one (**F-14, JSM noop label cardinality**) is unsafe today and should be hot-fixed regardless of IMPL-0004 sequencing. A post-publication rescan of `action.go` / `provider.go` / `dispatcher.go` surfaced four additional findings (F-41–F-44), one of which (**F-44, error responses bypass response counter**) is a medium-severity observability gap.
 
+**Resolved (as of PR #17):** F-11 (`classifyK8sErr` default → 500), F-14 (JSMNoopTotal label dropped). 42 findings outstanding.
+
 The hypothesis held: the highest-value cleanups concentrate around the **Executor's coupling to a single concrete CR type** (F-01, F-02, F-03), the **Dispatcher's single-`ResponseBuilder` assumption** (F-04), **hardcoded provider construction in `main.go`** (F-05), and the **Metrics god-struct** (F-13). Most other findings are tractable in passing — but the Theme-1 items will compound nonlinearly once a second provider exists.
 
 The four-agent parallel review pattern was effective: ~30% overlap between specialists (especially on executor coupling — surfaced by both `go-architect` and `Explore`) confirmed those findings; the remaining 70% were genuinely lens-specific (cardinality risk from `go-performance`; style rules from `go-style`; doc gaps and test-coverage gaps from `Explore`). Recommend the same multi-agent pattern for future architectural reviews.
@@ -295,13 +299,13 @@ The four-agent parallel review pattern was effective: ~30% overlap between speci
 
 **Sequencing:** three tracks, in order.
 
-1. **Hot-fix (separate PR, before anything else).**
-   - **F-14** — bound `webhookd_jsm_noop_total{trigger_status}` cardinality. Allow-list or `__other__` bucket. Single small commit, ship before IMPL-0004 begins (or sooner). This is the only finding marked *unsafe today*.
+1. **Hot-fix (separate PR, before anything else).** ✅ **Done — PR #17**
+   - ~~**F-14** — bound `webhookd_jsm_noop_total{trigger_status}` cardinality.~~ Resolved: label dropped entirely; see F-14 above for the why.
 
 2. **Pre-IMPL-0004 cleanup PRs (open a `plan` doc to scope).**
    - Theme 1 (F-01 through F-06) **must** land before IMPL-0004 starts — they define the seams IMPL-0004 will fill in. Suggest one PR per finding, each small enough to review in 15 minutes.
    - Theme 2 (F-07 through F-10) **should** land before IMPL-0004 — bundle into one "coupling cleanup" PR if convenient.
-   - F-11 (classifyK8sErr default) — small standalone behavior fix; should ship pre-IMPL-0004 so the new error-shape baseline is the multi-tenant reference.
+   - ~~F-11 (classifyK8sErr default)~~ — ✅ Resolved in PR #17.
    - F-13 (Metrics god-struct) — narrow consumer interfaces are inexpensive and unlock cleaner IMPL-0004 testing; recommend pre-IMPL-0004.
    - F-44 (response counter bypasses error paths) — pair with F-09's rename so the metric is provider-agnostic and complete at the same time; pre-IMPL-0004 so the baseline metric is trustworthy.
 

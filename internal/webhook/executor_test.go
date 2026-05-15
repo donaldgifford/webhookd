@@ -361,7 +361,7 @@ func TestClassifyK8sErr(t *testing.T) {
 		{"too_many_requests", apierrors.NewTooManyRequests("rate limited", 5), webhook.ResultTransientFailure},
 		{"server_timeout", apierrors.NewServerTimeout(gr, "patch", 5), webhook.ResultTransientFailure},
 		{"service_unavailable", apierrors.NewServiceUnavailable("down"), webhook.ResultTransientFailure},
-		{"random_error", errors.New("network broken"), webhook.ResultTransientFailure},
+		{"unknown_error", errors.New("network broken"), webhook.ResultInternalError},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
