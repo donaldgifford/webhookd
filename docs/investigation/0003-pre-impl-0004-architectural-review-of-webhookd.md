@@ -168,6 +168,11 @@ These are the structural issues that will compound badly when adding a second Pr
 - Problem: Both packages check `if metrics == nil { return }` to permit nil-metrics tests, but the contract is implicit. Callers don't know whether nil is OK without reading the implementation.
 - Approach: Document the nil-acceptable contract on `ExecutorConfig.Metrics` and `jsm.Config.Metrics`. Alternative: require non-nil and provide a `metrics.Noop()` constructor.
 
+**F-44 — Early-out HTTP error responses bypass the response counter** (medium)
+- Location: `internal/webhook/dispatcher.go:124, 132, 137, 142` (four early-return paths via `http.Error`); counter increment lives at `:169` inside `writeResponse`.
+- Problem: Responses for `404 unknown provider`, `401 invalid signature`, `413 body too large`, and `400 read body failed` never increment `webhookd_jsm_response_total`. Operators reading the counter assume it represents *all* responses; it represents only the post-verification subset. SLOs built off this metric will understate true error rates by exactly the noisiest-but-most-interesting categories.
+- Approach: Hoist the counter increment into a deferred `statusRecorder.Status()` call at the top of `ServeHTTP` (synergy with F-22, which already discusses status-recorder reuse). Pair with F-09's rename so the metric is provider-agnostic before the wider counter is enabled.
+
 ### Theme 5 — Lifecycle and concurrency
 
 **F-17 — `k8s.Scheme` is a package-level mutable `var`** (low)
@@ -219,6 +224,11 @@ These are mostly low/medium; flag-worthy primarily because they signal architect
 - Problem: `/healthz` and `/readyz` allocate a `[]byte` from a constant string on every request. Kubelet hits these at probe frequency.
 - Approach: Use `io.WriteString(w, body)`.
 
+**F-42 — `strconv.Itoa(status)` allocated per response over a bounded status set** (low)
+- Location: `internal/webhook/dispatcher.go:169`.
+- Problem: HTTP response status codes for webhookd are a small bounded set (200, 400, 401, 413, 422, 500, 503, 504). `strconv.Itoa` allocates a new string on every response purely to feed it as a Prometheus label.
+- Approach: Pre-populate a `var statusLabels = map[int]string{...}` and look up. Saves the allocation; the lookup is faster than `strconv.Itoa` for tiny ints anyway.
+
 ### Theme 7 — Documentation, naming, and test gaps
 
 **F-26 — Exported label/annotation constants in executor have no doc comments** (medium)
@@ -246,6 +256,16 @@ These are mostly low/medium; flag-worthy primarily because they signal architect
 - Problem: `crName` in particular is DNS-1123 normalization of an external identifier — algorithmically load-bearing. Operators debugging CR naming will only find it in source.
 - Approach: Move the per-CR-kind name builder into a `CRNamer` function on the `Action` interface (paired with F-02). The classifier helpers stay unexported.
 
+**F-41 — `NewDispatcher` duplicate-provider-panic is untested** (low)
+- Location: `internal/webhook/dispatcher.go:107–113`.
+- Problem: The panic-on-duplicate invariant is a deliberate architectural choice ("crash loudly at startup") but no test exercises it. A future refactor that flips to silent overwrite or `errors.New(...)` would pass CI silently.
+- Approach: Add one test that calls `NewDispatcher` with two providers whose `Name()` collides; assert the panic via `defer recover()`. Five-line test, ten-year invariant.
+
+**F-43 — `traceIDFromContext` defined in `executor.go` but used by `dispatcher.go`** (low)
+- Location: defined `internal/webhook/executor.go:330`, called from `internal/webhook/dispatcher.go:161`.
+- Problem: Cross-file helper inside the same package — correct technically, but its location signals "executor-private" to readers. Future contributors may duplicate it elsewhere rather than discover it.
+- Approach: Move to a small `internal/webhook/context.go` or merge with the request-ID helper as part of F-07's fix. Makes the shared-helper status explicit.
+
 ### Theme 8 — Style-guide nits (Uber Go Style)
 
 A handful of straightforward fixes the linter doesn't enforce. None blocking; bundle into a single "style sweep" PR before IMPL-0004 kickoff.
@@ -265,7 +285,7 @@ A handful of straightforward fixes the linter doesn't enforce. None blocking; bu
 
 ## Conclusion
 
-**Answer: Confirmed.** There is meaningful pre-IMPL-0004 cleanup, but the scope is bounded — ~30 distinct findings of which 6 are high-severity (all in Theme 1), ~10 are medium, and the rest are low or style nits. No issue is catastrophic; one (**F-14, JSM noop label cardinality**) is unsafe today and should be hot-fixed regardless of IMPL-0004 sequencing.
+**Answer: Confirmed.** There is meaningful pre-IMPL-0004 cleanup, but the scope is bounded — 34 narrative findings + 10 style nits (44 total), of which 6 are high-severity (all in Theme 1), 11 are medium, and the rest are low. No issue is catastrophic; one (**F-14, JSM noop label cardinality**) is unsafe today and should be hot-fixed regardless of IMPL-0004 sequencing. A post-publication rescan of `action.go` / `provider.go` / `dispatcher.go` surfaced four additional findings (F-41–F-44), one of which (**F-44, error responses bypass response counter**) is a medium-severity observability gap.
 
 The hypothesis held: the highest-value cleanups concentrate around the **Executor's coupling to a single concrete CR type** (F-01, F-02, F-03), the **Dispatcher's single-`ResponseBuilder` assumption** (F-04), **hardcoded provider construction in `main.go`** (F-05), and the **Metrics god-struct** (F-13). Most other findings are tractable in passing — but the Theme-1 items will compound nonlinearly once a second provider exists.
 
@@ -283,13 +303,14 @@ The four-agent parallel review pattern was effective: ~30% overlap between speci
    - Theme 2 (F-07 through F-10) **should** land before IMPL-0004 — bundle into one "coupling cleanup" PR if convenient.
    - F-11 (classifyK8sErr default) — small standalone behavior fix; should ship pre-IMPL-0004 so the new error-shape baseline is the multi-tenant reference.
    - F-13 (Metrics god-struct) — narrow consumer interfaces are inexpensive and unlock cleaner IMPL-0004 testing; recommend pre-IMPL-0004.
+   - F-44 (response counter bypasses error paths) — pair with F-09's rename so the metric is provider-agnostic and complete at the same time; pre-IMPL-0004 so the baseline metric is trustworthy.
 
 3. **IMPL-0004-adjacent cleanup (fold into IMPL-0004 phases).**
    - F-12 (classify-helper pattern) — defer; the registry materializes inside IMPL-0004 naturally.
    - F-15, F-16, F-17 (metrics construction split, nil-safety doc, scheme package var) — fold into the IMPL-0004 phase that touches the same code.
    - F-18, F-19 (lifecycle / config-shape nits) — IMPL-0004 phase 0 or 1.
-   - F-20, F-21, F-22, F-23, F-24, F-25 (perf/allocation) — defer unless we see real load problems; revisit during IMPL-0004 performance pass.
-   - F-26 through F-30 (doc / test gaps) — bundle into a single "doc-and-test sweep" PR before IMPL-0004 kickoff.
+   - F-20, F-21, F-22, F-23, F-24, F-25, F-42 (perf/allocation) — defer unless we see real load problems; revisit during IMPL-0004 performance pass.
+   - F-26 through F-30, F-41, F-43 (doc / test / organization gaps) — bundle into a single "doc-and-test sweep" PR before IMPL-0004 kickoff.
    - F-31 through F-40 (Uber style nits) — one batch PR; uncontroversial.
 
 **Next step.** Open PLAN-XXXX to lay out the cleanup work as discrete PRs (Themes 1, 2, 3 and the doc-sweep + style-sweep). The plan doc references this investigation; each PR references the relevant finding ID. If the team decides not to pursue some findings (e.g., F-22 is judged not worth the refactor), record the deferral inline in the plan doc with a one-line rationale.
