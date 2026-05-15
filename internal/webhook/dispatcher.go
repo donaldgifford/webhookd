@@ -17,16 +17,6 @@ import (
 	"github.com/donaldgifford/webhookd/internal/observability"
 )
 
-// ResponseBuilder is the seam between provider-agnostic execution
-// (the dispatcher's call to Execute) and provider-specific response
-// shaping. JSM responses include `crName`, `traceId`, `requestId`
-// fields that JSM's automation rule reads for ticket comments; future
-// providers (Slack, GitHub) will want different bodies. Each provider
-// ships its own implementation in its own package.
-type ResponseBuilder interface {
-	BuildResponse(res ExecResult, traceID, requestID string) any
-}
-
 // Dispatcher is the HTTP entry point that ties providers, signature
 // verification, and the executor together. It is the only piece in
 // the package that knows about `*http.Request` — providers stay pure
@@ -36,12 +26,11 @@ type ResponseBuilder interface {
 // safety is inherited from the underlying components (providers are
 // goroutine-safe by contract; the executor is too).
 type Dispatcher struct {
-	providers       map[string]Provider
-	responseBuilder ResponseBuilder
-	executor        executorIface
-	logger          *slog.Logger
-	metrics         *observability.Metrics
-	maxBodyBytes    int64
+	providers    map[string]Provider
+	executor     executorIface
+	logger       *slog.Logger
+	metrics      *observability.Metrics
+	maxBodyBytes int64
 }
 
 // executorIface is what the dispatcher needs from an Executor — pulled
@@ -56,13 +45,11 @@ type executorIface interface {
 // is small and stable; functional options here would be ceremony.
 type DispatcherConfig struct {
 	// Providers is the registered set, keyed by Name. Routes to the
-	// matching provider via the `{provider}` URL path value.
+	// matching provider via the `{provider}` URL path value. Each
+	// provider also builds its own response shape via BuildResponse —
+	// see INV-0003 §F-04 for why this lives on Provider rather than
+	// on a separate ResponseBuilder seam.
 	Providers []Provider
-
-	// ResponseBuilder shapes ExecResult into a provider-specific
-	// response body. Phase 2 ships exactly one (JSM); when a second
-	// provider lands, this becomes a per-provider lookup.
-	ResponseBuilder ResponseBuilder
 
 	// Executor performs the side-effectful Action returned by
 	// Provider.Handle.
@@ -91,12 +78,11 @@ type DispatcherConfig struct {
 // threshold; callers pass `&DispatcherConfig{...}`.
 func NewDispatcher(cfg *DispatcherConfig) *Dispatcher {
 	d := &Dispatcher{
-		providers:       make(map[string]Provider, len(cfg.Providers)),
-		responseBuilder: cfg.ResponseBuilder,
-		executor:        cfg.Executor,
-		logger:          cfg.Logger,
-		metrics:         cfg.Metrics,
-		maxBodyBytes:    cfg.MaxBodyBytes,
+		providers:    make(map[string]Provider, len(cfg.Providers)),
+		executor:     cfg.Executor,
+		logger:       cfg.Logger,
+		metrics:      cfg.Metrics,
+		maxBodyBytes: cfg.MaxBodyBytes,
 	}
 	if d.logger == nil {
 		d.logger = slog.Default()
@@ -145,19 +131,19 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	action, err := prov.Handle(ctx, body)
 	if err != nil {
 		res := classifyProviderErr(err)
-		d.writeResponse(ctx, w, res)
+		d.writeResponse(ctx, w, prov, res)
 		return
 	}
 
 	res := d.executor.Execute(ctx, action)
-	d.writeResponse(ctx, w, res)
+	d.writeResponse(ctx, w, prov, res)
 }
 
 // writeResponse serializes the response body and writes the status
-// code derived from result.Kind. The body is provider-specific via
-// ResponseBuilder; the status code is provider-agnostic via
-// HTTPStatus.
-func (d *Dispatcher) writeResponse(ctx context.Context, w http.ResponseWriter, res ExecResult) {
+// code derived from result.Kind. The body is built by the per-provider
+// BuildResponse method (different downstream callers want different
+// fields); the status code is provider-agnostic via HTTPStatus.
+func (d *Dispatcher) writeResponse(ctx context.Context, w http.ResponseWriter, prov Provider, res ExecResult) {
 	traceID := traceIDFromContext(ctx)
 	reqID := httpx.RequestIDFromContext(ctx)
 
@@ -169,7 +155,7 @@ func (d *Dispatcher) writeResponse(ctx context.Context, w http.ResponseWriter, r
 		d.metrics.JSMResponseTotal.WithLabelValues(strconv.Itoa(status)).Inc()
 	}
 
-	body := d.responseBuilder.BuildResponse(res, traceID, reqID)
+	body := prov.BuildResponse(res, traceID, reqID)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		// Header already written; nothing useful left to do but log.
 		d.logger.WarnContext(ctx, "encode response failed", "err", err.Error())

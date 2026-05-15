@@ -97,10 +97,11 @@ These are the structural issues that will compound badly when adding a second Pr
 - Problem: A JSM domain concept ("issue key") leaks into the generic K8s write path. Future backends without an "issue" concept will still stamp the annotation as `""`.
 - Approach: Move provider-specific annotation keys onto the `Action` itself (e.g. an `Annotations map[string]string` field on `ApplySAMLGroupMapping`). The executor merges what it's given without knowing semantics. `AnnotationIssue` becomes a JSM-package constant.
 
-**F-04 — `Dispatcher` holds a single `ResponseBuilder`, not a per-provider registry** (high)
+**F-04 — `Dispatcher` holds a single `ResponseBuilder`, not a per-provider registry** (high) — ✅ **Resolved in PR #18**
 - Location: `internal/webhook/dispatcher.go` (`DispatcherConfig.ResponseBuilder`, used unconditionally in `writeResponse`); wired in `cmd/webhookd/main.go` ~line 225.
 - Problem: The seam exists (and a comment acknowledges "when a second provider lands, this becomes a per-provider lookup") but is not structurally enforced. The dispatcher will silently apply the JSM response shape to non-JSM providers until someone audits and fixes it.
 - Approach: Either fold `ResponseBuilder` into the `Provider` interface (each provider builds its own response) or key builders by `p.Name()` in `NewDispatcher` alongside `d.providers`. The wiring already pairs them at construction time — formalize the co-location.
+- **Resolution:** Folded `BuildResponse(res, traceID, requestID) any` into the `Provider` interface itself. The standalone `ResponseBuilder` interface, the `Dispatcher.responseBuilder` field, and `DispatcherConfig.ResponseBuilder` are all gone. `writeResponse` now takes the provider it's responding for and calls `prov.BuildResponse(...)` directly. Mock provider grows a `ResponseFunc` for tests that want to override the default response shape.
 
 **F-05 — Hardcoded provider construction in `main.go`** (high)
 - Location: `cmd/webhookd/main.go:195–231` (`buildDispatcher`).
@@ -259,10 +260,11 @@ These are mostly low/medium; flag-worthy primarily because they signal architect
 - Problem: `crName` in particular is DNS-1123 normalization of an external identifier — algorithmically load-bearing. Operators debugging CR naming will only find it in source.
 - Approach: Move the per-CR-kind name builder into a `CRNamer` function on the `Action` interface (paired with F-02). The classifier helpers stay unexported.
 
-**F-41 — `NewDispatcher` duplicate-provider-panic is untested** (low)
+**F-41 — `NewDispatcher` duplicate-provider-panic is untested** (low) — ❌ **Withdrawn**
 - Location: `internal/webhook/dispatcher.go:107–113`.
 - Problem: The panic-on-duplicate invariant is a deliberate architectural choice ("crash loudly at startup") but no test exercises it. A future refactor that flips to silent overwrite or `errors.New(...)` would pass CI silently.
 - Approach: Add one test that calls `NewDispatcher` with two providers whose `Name()` collides; assert the panic via `defer recover()`. Five-line test, ten-year invariant.
+- **Correction:** Finding was incorrect — `TestDispatcher_DuplicateProviderPanics` already exists at `internal/webhook/dispatcher_test.go:195`. The rescan missed it. Withdrawn.
 
 **F-43 — `traceIDFromContext` defined in `executor.go` but used by `dispatcher.go`** (low)
 - Location: defined `internal/webhook/executor.go:330`, called from `internal/webhook/dispatcher.go:161`.

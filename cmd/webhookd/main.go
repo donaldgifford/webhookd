@@ -221,12 +221,11 @@ func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observabi
 	})
 
 	d := webhook.NewDispatcher(&webhook.DispatcherConfig{
-		Providers:       []webhook.Provider{provider},
-		ResponseBuilder: provider,
-		Executor:        executor,
-		Logger:          logger,
-		Metrics:         metrics,
-		MaxBodyBytes:    cfg.MaxBodyBytes,
+		Providers:    []webhook.Provider{provider},
+		Executor:     executor,
+		Logger:       logger,
+		Metrics:      metrics,
+		MaxBodyBytes: cfg.MaxBodyBytes,
 	})
 	return d, nil
 }

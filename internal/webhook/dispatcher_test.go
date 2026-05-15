@@ -18,22 +18,6 @@ import (
 	"github.com/donaldgifford/webhookd/internal/webhook/providertest"
 )
 
-// stubResponseBuilder is the smallest possible ResponseBuilder for
-// dispatcher tests — returns a map keyed by the result-kind string so
-// callers can assert on the encoded JSON.
-type stubResponseBuilder struct{}
-
-func (stubResponseBuilder) BuildResponse(res webhook.ExecResult, traceID, requestID string) any {
-	return map[string]any{
-		"kind":      res.Kind.String(),
-		"reason":    res.Reason,
-		"crName":    res.CRName,
-		"namespace": res.Namespace,
-		"traceId":   traceID,
-		"requestId": requestID,
-	}
-}
-
 // stubExecutor records the last action it received and returns the
 // configured ExecResult. Lets dispatcher tests verify the action got
 // through without spinning up envtest.
@@ -47,13 +31,16 @@ func (s *stubExecutor) Execute(_ context.Context, a webhook.Action) webhook.Exec
 	return s.result
 }
 
+// newDispatcher wires a Dispatcher around the supplied Provider +
+// stubExecutor. The Provider's BuildResponse drives the response
+// shape; providertest.Mock's default returns a kind-keyed map suitable
+// for assertions.
 func newDispatcher(t *testing.T, prov webhook.Provider, exec *stubExecutor) http.Handler {
 	t.Helper()
 	d := webhook.NewDispatcher(&webhook.DispatcherConfig{
-		Providers:       []webhook.Provider{prov},
-		ResponseBuilder: stubResponseBuilder{},
-		Executor:        exec,
-		MaxBodyBytes:    512,
+		Providers:    []webhook.Provider{prov},
+		Executor:     exec,
+		MaxBodyBytes: 512,
 	})
 	mux := http.NewServeMux()
 	mux.Handle("POST /webhook/{provider}", d)
@@ -217,8 +204,7 @@ func TestDispatcher_DuplicateProviderPanics(t *testing.T) {
 			&providertest.Mock{NameValue: "jsm"},
 			&providertest.Mock{NameValue: "jsm"},
 		},
-		ResponseBuilder: stubResponseBuilder{},
-		Executor:        &stubExecutor{},
+		Executor: &stubExecutor{},
 	})
 }
 
