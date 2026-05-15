@@ -101,7 +101,7 @@ func (p *Provider) Handle(_ context.Context, body []byte) (webhook.Action, error
 	}
 
 	if payload.Status() != p.cfg.TriggerStatus {
-		p.recordNoop(payload.Status())
+		p.recordNoop()
 		return webhook.NoopAction{
 			Reason: fmt.Sprintf("ticket %s status %q does not match trigger %q",
 				payload.IssueKey(), payload.Status(), p.cfg.TriggerStatus),
@@ -137,11 +137,15 @@ func (p *Provider) Handle(_ context.Context, body []byte) (webhook.Action, error
 
 // recordNoop is nil-safe; the test path constructs Provider without
 // Metrics and we want zero ceremony at the call site.
-func (p *Provider) recordNoop(status string) {
+//
+// The counter is unlabeled: ticket status is user-controlled and
+// would create unbounded Prometheus cardinality. Operators wanting
+// per-status breakdown can read it off the noop response span.
+func (p *Provider) recordNoop() {
 	if p.cfg.Metrics == nil {
 		return
 	}
-	p.cfg.Metrics.JSMNoopTotal.WithLabelValues(status).Inc()
+	p.cfg.Metrics.JSMNoopTotal.Inc()
 }
 
 // recordParseErr counts payload-rejected events by reason. Same

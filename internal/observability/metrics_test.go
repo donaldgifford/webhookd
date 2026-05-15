@@ -47,7 +47,7 @@ func TestNewMetrics_ExposesAllInstruments(t *testing.T) {
 	m.K8sApplyTotal.WithLabelValues("SAMLGroupMapping", "created").Inc()
 	m.K8sSyncDuration.WithLabelValues("SAMLGroupMapping", "ready").Observe(0.5)
 	m.JSMPayloadParseErrors.WithLabelValues("invalid_json").Add(0)
-	m.JSMNoopTotal.WithLabelValues("In Progress").Add(0)
+	m.JSMNoopTotal.Add(0)
 	m.JSMResponseTotal.WithLabelValues("200").Inc()
 
 	body := scrape(t, reg)
