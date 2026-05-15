@@ -218,7 +218,7 @@ func TestRun_EndToEnd_JSMToReadyCR(t *testing.T) {
 	t.Setenv("WEBHOOK_PROVIDERS", "jsm")
 	t.Setenv("WEBHOOK_KUBECONFIG", kubeconfigPath)
 	t.Setenv("WEBHOOK_CR_NAMESPACE", ns)
-	t.Setenv("WEBHOOK_CR_IDENTITY_PROVIDER_ID", "okta-prod")
+	t.Setenv("WEBHOOK_JSM_IDENTITY_PROVIDER_ID", "okta-prod")
 	t.Setenv("WEBHOOK_CR_SYNC_TIMEOUT", "10s")
 	t.Setenv("WEBHOOK_JSM_TRIGGER_STATUS", "Ready to Provision")
 	t.Setenv("WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID", "customfield_10201")

@@ -107,10 +107,11 @@ These are the structural issues that will compound badly when adding a second Pr
 - Problem: There is no provider registry. Adding a second provider requires editing `main.go` to construct it and pass it through. The HCL-based static registration pattern proposed in ADR-0010 isn't reflected anywhere yet.
 - Approach: Introduce a registration interface — `webhook.RegisterProvider(name string, factory ProviderFactory)` — that integration packages call from `init()` (ADR-0010). `main.go` then iterates `cfg.EnabledProviders` and resolves each from the registry. This is the change ADR-0010 promised; it must land before a second provider.
 
-**F-06 — `CRConfig` carries JSM/Wiz-specific `IdentityProviderID`** (medium → high under IMPL-0004)
+**F-06 — `CRConfig` carries JSM/Wiz-specific `IdentityProviderID`** (medium → high under IMPL-0004) — ✅ **Resolved in PR #18**
 - Location: `internal/config/config.go:117–143`.
 - Problem: `CRConfig` is positioned as the shared CR-emitting-backend config, but `IdentityProviderID` is meaningful only to JSM/Wiz `SAMLGroupMapping`. A non-Wiz backend that emits CRs would still carry this field as dead config.
 - Approach: Move `IdentityProviderID` into `JSMConfig`. Leave `CRConfig` containing only the structural K8s fields (`Namespace`, `FieldManager`, `SyncTimeout`).
+- **Resolution:** Field moved to `JSMConfig`. Env var renamed `WEBHOOK_CR_IDENTITY_PROVIDER_ID` → `WEBHOOK_JSM_IDENTITY_PROVIDER_ID`; chart `deployment.yaml` + helm-unittest + README all updated. Chart values key `jsm.crIdentityProviderID` kept as-is to avoid a chart-API breaking change; can be renamed in a follow-up chart-only PR.
 
 ### Theme 2 — Cross-package coupling
 

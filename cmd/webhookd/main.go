@@ -210,7 +210,7 @@ func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observabi
 		FieldProviderGroupID: cfg.JSM.FieldProviderGroupID,
 		FieldRole:            cfg.JSM.FieldRole,
 		FieldProject:         cfg.JSM.FieldProject,
-		IdentityProviderID:   cfg.CR.IdentityProviderID,
+		IdentityProviderID:   cfg.JSM.IdentityProviderID,
 		Signature: jsm.SignatureConfig{
 			SecretBytes: cfg.SigningSecret,
 			SigHeader:   cfg.SignatureHeader,

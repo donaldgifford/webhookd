@@ -139,7 +139,7 @@ All configuration is via environment variables (see [ADR-0003](docs/adr/0003-env
 | `WEBHOOK_CR_API_VERSION` | `v1alpha1` | Operator CRD version. |
 | `WEBHOOK_CR_FIELD_MANAGER` | `webhookd` | SSA `fieldManager` identity. |
 | `WEBHOOK_CR_SYNC_TIMEOUT` | `20s` | Max time to wait for the CR to reach `Ready=True`. Must be `<` `WEBHOOK_SHUTDOWN_TIMEOUT`. |
-| `WEBHOOK_CR_IDENTITY_PROVIDER_ID` | _(required when JSM enabled)_ | Static Wiz IdP identifier stamped onto every CR. |
+| `WEBHOOK_JSM_IDENTITY_PROVIDER_ID` | _(required when JSM enabled)_ | Static Wiz IdP identifier stamped onto every CR. |
 
 ## JSM provider
 

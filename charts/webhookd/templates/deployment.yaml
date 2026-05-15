@@ -103,7 +103,7 @@ spec:
               value: {{ .Values.jsm.syncTimeout | quote }}
             - name: WEBHOOK_CR_NAMESPACE
               value: {{ default (include "webhookd.targetNamespace" .) .Values.jsm.crNamespace | quote }}
-            - name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
+            - name: WEBHOOK_JSM_IDENTITY_PROVIDER_ID
               value: {{ required "jsm.crIdentityProviderID is required when jsm.enabled=true" .Values.jsm.crIdentityProviderID | quote }}
             {{- end }}
           {{- with .Values.livenessProbe }}
