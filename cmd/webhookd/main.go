@@ -200,7 +200,6 @@ func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observabi
 
 	executor := webhook.NewExecutor(clients.CtrlClient, logger, metrics,
 		webhook.ExecutorConfig{
-			Namespace:    cfg.CR.Namespace,
 			FieldManager: cfg.CR.FieldManager,
 			SyncTimeout:  cfg.CR.SyncTimeout,
 		})
@@ -211,6 +210,7 @@ func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observabi
 		FieldRole:            cfg.JSM.FieldRole,
 		FieldProject:         cfg.JSM.FieldProject,
 		IdentityProviderID:   cfg.JSM.IdentityProviderID,
+		Namespace:            cfg.CR.Namespace,
 		Signature: jsm.SignatureConfig{
 			SecretBytes: cfg.SigningSecret,
 			SigHeader:   cfg.SignatureHeader,

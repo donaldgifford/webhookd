@@ -12,14 +12,15 @@ import (
 
 	"github.com/donaldgifford/webhookd/internal/observability"
 	"github.com/donaldgifford/webhookd/internal/webhook"
+	"github.com/donaldgifford/webhookd/internal/webhook/wizapi"
 )
 
 // Config is the narrow per-provider configuration the JSM provider
 // needs at construction time. Built from the global *config.Config in
 // main.go via a small adapter — the provider never reads env directly.
 type Config struct {
-	// TriggerStatus is the JSM ticket status that fires
-	// `ApplySAMLGroupMapping`. Anything else returns NoopAction.
+	// TriggerStatus is the JSM ticket status that fires the
+	// SAMLGroupMapping ApplyAction. Anything else returns NoopAction.
 	TriggerStatus string
 
 	// Custom-field IDs used to extract spec values from the issue.
@@ -31,6 +32,12 @@ type Config struct {
 	// IdentityProviderID is stamped onto every CR's
 	// `spec.identityProviderId`. Static per webhookd install.
 	IdentityProviderID string
+
+	// Namespace is the K8s namespace that the SAMLGroupMapping CRs
+	// land in. Sourced from cfg.CR.Namespace at wiring time. Now that
+	// the executor is provider-agnostic (INV-0003 §F-02), object
+	// placement is the provider's responsibility.
+	Namespace string
 
 	// Signature carries the HMAC verification settings — secret,
 	// header names, skew, clock.
@@ -82,8 +89,10 @@ func (p *Provider) VerifySignature(r *http.Request, body []byte) error {
 //
 //   - `NoopAction` when the ticket isn't in the configured trigger
 //     status. The dispatcher responds 200 with `status: "noop"`.
-//   - `ApplySAMLGroupMapping` when the ticket *is* in the trigger
-//     status and all three custom fields are present and non-empty.
+//   - `ApplyAction` carrying a typed *wizapi.SAMLGroupMapping when the
+//     ticket *is* in the trigger status and all three custom fields are
+//     present and non-empty. The provider owns the typed object; the
+//     executor stays Kind-agnostic (INV-0003 §F-02).
 //   - non-nil error wrapping `webhook.ErrBadRequest` for parse errors
 //     (malformed JSON, missing required fields).
 //   - non-nil error wrapping `webhook.ErrUnprocessable` for typed
@@ -129,9 +138,14 @@ func (p *Provider) Handle(_ context.Context, body []byte) (webhook.Action, error
 		p.cfg.IdentityProviderID,
 		BuildDescription(payload.IssueKey()),
 	)
-	return webhook.ApplySAMLGroupMapping{
-		IssueKey: payload.IssueKey(),
-		Spec:     spec,
+	cr := BuildSAMLGroupMapping(CRName(payload.IssueKey()), p.cfg.Namespace, &spec)
+	return webhook.ApplyAction{
+		Object:      cr,
+		ListObject:  &wizapi.SAMLGroupMappingList{},
+		ReadyCheck:  IsReady,
+		Annotations: map[string]string{AnnotationIssue: payload.IssueKey()},
+		Kind:        "SAMLGroupMapping",
+		Source:      "jsm",
 	}, nil
 }
 
