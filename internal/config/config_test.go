@@ -142,7 +142,7 @@ func TestLoad_AllOverrides(t *testing.T) {
 		"WEBHOOK_CR_API_VERSION":              "v1beta1",
 		"WEBHOOK_CR_FIELD_MANAGER":            "custom-manager",
 		"WEBHOOK_CR_SYNC_TIMEOUT":             "5s",
-		"WEBHOOK_CR_IDENTITY_PROVIDER_ID":     "saml-idp-prod",
+		"WEBHOOK_JSM_IDENTITY_PROVIDER_ID":    "saml-idp-prod",
 		"WEBHOOK_KUBECONFIG":                  "/tmp/kubeconfig",
 	}
 	for k, v := range overrides {
@@ -182,12 +182,12 @@ func TestLoad_AllOverrides(t *testing.T) {
 		{"JSM.FieldProviderGroupID", cfg.JSM.FieldProviderGroupID, "customfield_10100"},
 		{"JSM.FieldRole", cfg.JSM.FieldRole, "customfield_10101"},
 		{"JSM.FieldProject", cfg.JSM.FieldProject, "customfield_10102"},
+		{"JSM.IdentityProviderID", cfg.JSM.IdentityProviderID, "saml-idp-prod"},
 		{"CR.Namespace", cfg.CR.Namespace, "custom-ns"},
 		{"CR.APIGroup", cfg.CR.APIGroup, "wiz.example.test"},
 		{"CR.APIVersion", cfg.CR.APIVersion, "v1beta1"},
 		{"CR.FieldManager", cfg.CR.FieldManager, "custom-manager"},
 		{"CR.SyncTimeout", cfg.CR.SyncTimeout, 5 * time.Second},
-		{"CR.IdentityProviderID", cfg.CR.IdentityProviderID, "saml-idp-prod"},
 		{"Kubeconfig", cfg.Kubeconfig, "/tmp/kubeconfig"},
 	}
 	for _, c := range checks {
@@ -334,7 +334,7 @@ func jsmEnv(t *testing.T) {
 	t.Setenv("WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID", "customfield_10100")
 	t.Setenv("WEBHOOK_JSM_FIELD_ROLE", "customfield_10101")
 	t.Setenv("WEBHOOK_JSM_FIELD_PROJECT", "customfield_10102")
-	t.Setenv("WEBHOOK_CR_IDENTITY_PROVIDER_ID", "saml-idp-test")
+	t.Setenv("WEBHOOK_JSM_IDENTITY_PROVIDER_ID", "saml-idp-test")
 }
 
 // TestLoad_JSMRequiredFields covers the "JSM enabled, required field
@@ -360,11 +360,11 @@ func TestLoad_JSMRequiredFields(t *testing.T) {
 }
 
 // TestLoad_IdentityProviderIDRequired verifies the
-// WEBHOOK_CR_IDENTITY_PROVIDER_ID guard fires when JSM is enabled
+// WEBHOOK_JSM_IDENTITY_PROVIDER_ID guard fires when JSM is enabled
 // but the IdP isn't set.
 func TestLoad_IdentityProviderIDRequired(t *testing.T) {
 	jsmEnv(t)
-	t.Setenv("WEBHOOK_CR_IDENTITY_PROVIDER_ID", "")
+	t.Setenv("WEBHOOK_JSM_IDENTITY_PROVIDER_ID", "")
 
 	_, err := config.Load()
 	if !errors.Is(err, config.ErrIdentityProviderIDRequired) {

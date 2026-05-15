@@ -78,7 +78,7 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
+            name: WEBHOOK_JSM_IDENTITY_PROVIDER_ID
             value: test-idp
 
   - it: skips JSM env vars when jsm.enabled=false
@@ -94,7 +94,7 @@ tests:
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
-            name: WEBHOOK_CR_IDENTITY_PROVIDER_ID
+            name: WEBHOOK_JSM_IDENTITY_PROVIDER_ID
             value: test-idp
 
   - it: jsm.crIdentityProviderID empty + jsm.enabled=true is rejected by the values schema

@@ -53,4 +53,12 @@ type Provider interface {
 	//     dispatcher classifies via errors.Is checks against this
 	//     package's sentinels.
 	Handle(ctx context.Context, body []byte) (Action, error)
+
+	// BuildResponse shapes the executor's ExecResult into the
+	// provider-specific response body the dispatcher will JSON-encode.
+	// Each provider owns its own response shape; downstream callers
+	// (JSM, Slack, GitHub) expect different fields. Pure function — no
+	// I/O — called once per request after the executor returns.
+	// See INV-0003 §F-04.
+	BuildResponse(res ExecResult, traceID, requestID string) any
 }

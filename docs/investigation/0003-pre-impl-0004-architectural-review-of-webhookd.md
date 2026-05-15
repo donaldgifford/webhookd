@@ -82,35 +82,41 @@ Each finding has an ID (`F-NN`), location, severity, problem statement, and a on
 
 These are the structural issues that will compound badly when adding a second Provider or Backend. **All should be addressed (or explicitly accepted) before IMPL-0004 begins.**
 
-**F-01 — `Action` union references concrete `wizapi` type** (high)
+**F-01 — `Action` union references concrete `wizapi` type** (high) — ✅ **Resolved in PR #18**
 - Location: `internal/webhook/action.go` (entire `ApplySAMLGroupMapping` struct).
 - Problem: The `Action` union, intended as the dispatcher↔executor contract, embeds `wizapi.SAMLGroupMappingSpec` as a field. The "generic" execution layer is concrete to one CR shape from the start.
 - Approach: Make `Action` a fully opaque interface; move `ApplySAMLGroupMapping` (and its `Spec` field) into either its own subpackage or into `internal/webhook/jsm`. The executor type-switches on the interface, not on a sibling-package concrete type.
+- **Resolution:** `ApplySAMLGroupMapping` is gone; the union now ships a fully generic `ApplyAction` whose `Object` is `client.Object` and `ListObject` is `client.ObjectList`. Providers build the typed CR themselves (`jsm.BuildSAMLGroupMapping`) and supply a `ReadyCheck func(client.Object, applyGen int64) (bool, int64)` closure for the watch step. The `wizapi` import is gone from `internal/webhook/`. Tested via the trilogy F-01/F-02/F-03 in `executor_test.go` and `jsm/provider_test.go`.
 
-**F-02 — Executor hardcoded to `SAMLGroupMapping`** (high)
+**F-02 — Executor hardcoded to `SAMLGroupMapping`** (high) — ✅ **Resolved in PR #18**
 - Location: `internal/webhook/executor.go:33` (`crKindLabel = "SAMLGroupMapping"`), `:244–278` (`waitForSync` constructs `&wizapi.SAMLGroupMappingList{}` and asserts `ev.Object.(*wizapi.SAMLGroupMapping)`), `:302–307` (`labels()` returns `LabelSource: "jsm"`).
 - Problem: The executor is nominally generic — accepts any `Action` — but every Prometheus observation, every CR label, and the watch loop's type machinery are pinned to one provider × one CR kind. Adding a second backend means forking `Execute`/`waitForSync` or threading kind/source through every call.
 - Approach: Extract a `SyncTarget` (or `Watchable`) interface that supplies (a) an empty list-typed object for `client.WithWatch.Watch()`, (b) a predicate that matches a single instance, and (c) a `Ready` checker. Carry `kind` and `source` on `ApplySAMLGroupMapping` (or pull from per-backend `ExecutorConfig`) and thread them into `observeApply`, `observeSync`, `labels()`.
+- **Resolution:** `crKindLabel` constant deleted; `ApplyAction.Kind` and `ApplyAction.Source` parameterize every observation. `waitForSync` watches via `act.ListObject` and dispatches readiness via `act.ReadyCheck`. The initial Get uses `applied.DeepCopyObject().(client.Object)` for a blank-typed copy without naming the CR type. `ExecutorConfig.Namespace` is gone — namespace placement is per-Object via `obj.GetNamespace()`. The `LabelSource: "jsm"` constant is gone; `systemLabels(source)` takes the provider's name. `wizapi` import dropped from `executor.go`.
 
-**F-03 — `AnnotationIssue` is JSM-specific but lives on the executor** (high)
+**F-03 — `AnnotationIssue` is JSM-specific but lives on the executor** (high) — ✅ **Resolved in PR #18**
 - Location: `internal/webhook/executor.go:44` (`AnnotationIssue = "webhookd.io/jsm-issue-key"`); stamped unconditionally by `annotations()` at `:315`.
 - Problem: A JSM domain concept ("issue key") leaks into the generic K8s write path. Future backends without an "issue" concept will still stamp the annotation as `""`.
 - Approach: Move provider-specific annotation keys onto the `Action` itself (e.g. an `Annotations map[string]string` field on `ApplySAMLGroupMapping`). The executor merges what it's given without knowing semantics. `AnnotationIssue` becomes a JSM-package constant.
+- **Resolution:** `AnnotationIssue` constant moved to `internal/webhook/jsm/cr.go`. The executor exposes only the namespace-agnostic system annotations (`webhookd.io/trace-id`, `webhookd.io/request-id`, `webhookd.io/applied-at`). Provider-specific annotations flow through `ApplyAction.Annotations` and are merged onto the object by `mergeAnnotations(provider, providerExtra, executor)` left-to-right. JSM now stamps its issue key from `provider.go`, not the executor. The `crName` derivation also moved to `jsm.CRName(issueKey)`.
 
-**F-04 — `Dispatcher` holds a single `ResponseBuilder`, not a per-provider registry** (high)
+**F-04 — `Dispatcher` holds a single `ResponseBuilder`, not a per-provider registry** (high) — ✅ **Resolved in PR #18**
 - Location: `internal/webhook/dispatcher.go` (`DispatcherConfig.ResponseBuilder`, used unconditionally in `writeResponse`); wired in `cmd/webhookd/main.go` ~line 225.
 - Problem: The seam exists (and a comment acknowledges "when a second provider lands, this becomes a per-provider lookup") but is not structurally enforced. The dispatcher will silently apply the JSM response shape to non-JSM providers until someone audits and fixes it.
 - Approach: Either fold `ResponseBuilder` into the `Provider` interface (each provider builds its own response) or key builders by `p.Name()` in `NewDispatcher` alongside `d.providers`. The wiring already pairs them at construction time — formalize the co-location.
+- **Resolution:** Folded `BuildResponse(res, traceID, requestID) any` into the `Provider` interface itself. The standalone `ResponseBuilder` interface, the `Dispatcher.responseBuilder` field, and `DispatcherConfig.ResponseBuilder` are all gone. `writeResponse` now takes the provider it's responding for and calls `prov.BuildResponse(...)` directly. Mock provider grows a `ResponseFunc` for tests that want to override the default response shape.
 
-**F-05 — Hardcoded provider construction in `main.go`** (high)
+**F-05 — Hardcoded provider construction in `main.go`** (high) — ✅ **Resolved in PR #18**
 - Location: `cmd/webhookd/main.go:195–231` (`buildDispatcher`).
 - Problem: There is no provider registry. Adding a second provider requires editing `main.go` to construct it and pass it through. The HCL-based static registration pattern proposed in ADR-0010 isn't reflected anywhere yet.
 - Approach: Introduce a registration interface — `webhook.RegisterProvider(name string, factory ProviderFactory)` — that integration packages call from `init()` (ADR-0010). `main.go` then iterates `cfg.EnabledProviders` and resolves each from the registry. This is the change ADR-0010 promised; it must land before a second provider.
+- **Resolution:** `internal/webhook/registry.go` introduces `Registry`, `ProviderFactory`, `ProviderDeps`, and a `DefaultRegistry` package singleton. `internal/webhook/jsm/init.go` calls `webhook.RegisterProvider("jsm", factory)` at package-init time. `main.go` imports `_ "internal/webhook/jsm"` as a side-effect import and resolves providers via `webhook.DefaultRegistry.Build(deps)` — main no longer constructs JSM directly. Tests cover unknown-provider errors, factory-error propagation, duplicate-registration panic, and empty-enabled-set returns no error. Adding a second provider is now one new package + one new blank-import line in main.
 
-**F-06 — `CRConfig` carries JSM/Wiz-specific `IdentityProviderID`** (medium → high under IMPL-0004)
+**F-06 — `CRConfig` carries JSM/Wiz-specific `IdentityProviderID`** (medium → high under IMPL-0004) — ✅ **Resolved in PR #18**
 - Location: `internal/config/config.go:117–143`.
 - Problem: `CRConfig` is positioned as the shared CR-emitting-backend config, but `IdentityProviderID` is meaningful only to JSM/Wiz `SAMLGroupMapping`. A non-Wiz backend that emits CRs would still carry this field as dead config.
 - Approach: Move `IdentityProviderID` into `JSMConfig`. Leave `CRConfig` containing only the structural K8s fields (`Namespace`, `FieldManager`, `SyncTimeout`).
+- **Resolution:** Field moved to `JSMConfig`. Env var renamed `WEBHOOK_CR_IDENTITY_PROVIDER_ID` → `WEBHOOK_JSM_IDENTITY_PROVIDER_ID`; chart `deployment.yaml` + helm-unittest + README all updated. Chart values key `jsm.crIdentityProviderID` kept as-is to avoid a chart-API breaking change; can be renamed in a follow-up chart-only PR.
 
 ### Theme 2 — Cross-package coupling
 
@@ -258,10 +264,11 @@ These are mostly low/medium; flag-worthy primarily because they signal architect
 - Problem: `crName` in particular is DNS-1123 normalization of an external identifier — algorithmically load-bearing. Operators debugging CR naming will only find it in source.
 - Approach: Move the per-CR-kind name builder into a `CRNamer` function on the `Action` interface (paired with F-02). The classifier helpers stay unexported.
 
-**F-41 — `NewDispatcher` duplicate-provider-panic is untested** (low)
+**F-41 — `NewDispatcher` duplicate-provider-panic is untested** (low) — ❌ **Withdrawn**
 - Location: `internal/webhook/dispatcher.go:107–113`.
 - Problem: The panic-on-duplicate invariant is a deliberate architectural choice ("crash loudly at startup") but no test exercises it. A future refactor that flips to silent overwrite or `errors.New(...)` would pass CI silently.
 - Approach: Add one test that calls `NewDispatcher` with two providers whose `Name()` collides; assert the panic via `defer recover()`. Five-line test, ten-year invariant.
+- **Correction:** Finding was incorrect — `TestDispatcher_DuplicateProviderPanics` already exists at `internal/webhook/dispatcher_test.go:195`. The rescan missed it. Withdrawn.
 
 **F-43 — `traceIDFromContext` defined in `executor.go` but used by `dispatcher.go`** (low)
 - Location: defined `internal/webhook/executor.go:330`, called from `internal/webhook/dispatcher.go:161`.

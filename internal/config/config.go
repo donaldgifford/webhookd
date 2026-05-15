@@ -111,6 +111,12 @@ type JSMConfig struct {
 	// name (becomes spec.projectRefs[0].name; cardinality is 1:1 in
 	// Phase 2).
 	FieldProject string
+
+	// IdentityProviderID is the static Wiz IdP identifier stamped
+	// into every CR's spec.identityProviderId. One IdP per webhookd
+	// install. Lives on JSMConfig rather than CRConfig because the
+	// concept is JSM/Wiz-specific (SAMLGroupMapping); INV-0003 §F-06.
+	IdentityProviderID string
 }
 
 // CRConfig groups Kubernetes CustomResource settings shared by any
@@ -135,11 +141,6 @@ type CRConfig struct {
 	// to mark Ready=True. Must be strictly less than ShutdownTimeout
 	// so a SIGTERM during a long sync still drains within budget.
 	SyncTimeout time.Duration
-
-	// IdentityProviderID is the static Wiz IdP identifier stamped
-	// into every CR's spec.identityProviderId. One IdP per webhookd
-	// install.
-	IdentityProviderID string
 }
 
 // BuildInfo carries build-time provenance for the
@@ -167,11 +168,10 @@ var ErrJSMFieldsRequired = errors.New(
 		"and WEBHOOK_JSM_FIELD_PROJECT are required when JSM is enabled",
 )
 
-// ErrIdentityProviderIDRequired is returned by Load when at least one
-// CR-applying provider is enabled but WEBHOOK_CR_IDENTITY_PROVIDER_ID
-// is unset.
+// ErrIdentityProviderIDRequired is returned by Load when JSM is
+// enabled but WEBHOOK_JSM_IDENTITY_PROVIDER_ID is unset.
 var ErrIdentityProviderIDRequired = errors.New(
-	"WEBHOOK_CR_IDENTITY_PROVIDER_ID is required when a CR-applying provider is enabled",
+	"WEBHOOK_JSM_IDENTITY_PROVIDER_ID is required when JSM is enabled",
 )
 
 // ErrSyncTimeoutTooLong is returned when WEBHOOK_CR_SYNC_TIMEOUT is
@@ -232,16 +232,16 @@ func Load() (*Config, error) {
 			FieldProviderGroupID: l.str("WEBHOOK_JSM_FIELD_PROVIDER_GROUP_ID", ""),
 			FieldRole:            l.str("WEBHOOK_JSM_FIELD_ROLE", ""),
 			FieldProject:         l.str("WEBHOOK_JSM_FIELD_PROJECT", ""),
+			IdentityProviderID:   l.str("WEBHOOK_JSM_IDENTITY_PROVIDER_ID", ""),
 		},
 
 		// CR (Kubernetes) — applied by CR-emitting providers.
 		CR: CRConfig{
-			Namespace:          l.str("WEBHOOK_CR_NAMESPACE", "wiz-operator"),
-			APIGroup:           l.str("WEBHOOK_CR_API_GROUP", "wiz.webhookd.io"),
-			APIVersion:         l.str("WEBHOOK_CR_API_VERSION", "v1alpha1"),
-			FieldManager:       l.str("WEBHOOK_CR_FIELD_MANAGER", "webhookd"),
-			SyncTimeout:        l.dur("WEBHOOK_CR_SYNC_TIMEOUT", 20*time.Second),
-			IdentityProviderID: l.str("WEBHOOK_CR_IDENTITY_PROVIDER_ID", ""),
+			Namespace:    l.str("WEBHOOK_CR_NAMESPACE", "wiz-operator"),
+			APIGroup:     l.str("WEBHOOK_CR_API_GROUP", "wiz.webhookd.io"),
+			APIVersion:   l.str("WEBHOOK_CR_API_VERSION", "v1alpha1"),
+			FieldManager: l.str("WEBHOOK_CR_FIELD_MANAGER", "webhookd"),
+			SyncTimeout:  l.dur("WEBHOOK_CR_SYNC_TIMEOUT", 20*time.Second),
 		},
 
 		// Optional kubeconfig path; empty falls back to in-cluster config.
@@ -312,10 +312,10 @@ func validate(cfg *Config) error {
 			cfg.JSM.FieldProject == "" {
 			return ErrJSMFieldsRequired
 		}
-		// JSM is currently the only CR-applying provider; tying the
-		// IdentityProviderID requirement to JSM until a second CR
-		// emitter shows up.
-		if cfg.CR.IdentityProviderID == "" {
+		// IdentityProviderID is JSM/Wiz-specific (the IdP that owns the
+		// SAMLGroupMapping CR's spec.identityProviderId). Validated under
+		// the JSM gate; INV-0003 §F-06.
+		if cfg.JSM.IdentityProviderID == "" {
 			return ErrIdentityProviderIDRequired
 		}
 	}

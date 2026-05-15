@@ -23,6 +23,7 @@ import (
 
 	"github.com/donaldgifford/webhookd/internal/k8s"
 	"github.com/donaldgifford/webhookd/internal/webhook"
+	"github.com/donaldgifford/webhookd/internal/webhook/jsm"
 	"github.com/donaldgifford/webhookd/internal/webhook/wizapi"
 )
 
@@ -129,13 +130,27 @@ func sanitizeDNSLabel(s string) string {
 	return out
 }
 
+// newSAMLApply builds an ApplyAction for SAMLGroupMapping using the
+// same jsm-package helpers production code uses. Tests asserting the
+// executor's generic Action handling go through jsm rather than
+// re-deriving the construction in-place.
+func newSAMLApply(issueKey, namespace string, spec *wizapi.SAMLGroupMappingSpec) webhook.ApplyAction {
+	return webhook.ApplyAction{
+		Object:      jsm.BuildSAMLGroupMapping(jsm.CRName(issueKey), namespace, spec),
+		ListObject:  &wizapi.SAMLGroupMappingList{},
+		ReadyCheck:  jsm.IsReady,
+		Annotations: map[string]string{jsm.AnnotationIssue: issueKey},
+		Kind:        "SAMLGroupMapping",
+		Source:      "jsm",
+	}
+}
+
 // TestExecutor_Execute_Noop returns ResultNoop with the supplied reason
 // and never touches the cluster — verified by passing a nil client
 // that would panic on any method call.
 func TestExecutor_Execute_Noop(t *testing.T) {
 	t.Parallel()
 	exe := webhook.NewExecutor(nil, nil, nil, webhook.ExecutorConfig{
-		Namespace:   "wiz-operator",
 		SyncTimeout: time.Second,
 	})
 	res := exe.Execute(t.Context(), webhook.NoopAction{Reason: "ticket not in trigger status"})
@@ -154,20 +169,16 @@ func TestExecutor_Execute_Noop(t *testing.T) {
 func TestExecutor_Execute_HappyPath(t *testing.T) {
 	c, ns := newTestClient(t)
 	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
-		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  20 * time.Second,
 	})
 
-	act := webhook.ApplySAMLGroupMapping{
-		IssueKey: "SEC-100",
-		Spec: wizapi.SAMLGroupMappingSpec{
-			IdentityProviderID: "okta-prod",
-			ProviderGroupID:    "team-platform",
-			RoleRef:            wizapi.RoleRef{Name: "admin"},
-			ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
-		},
-	}
+	act := newSAMLApply("SEC-100", ns, &wizapi.SAMLGroupMappingSpec{
+		IdentityProviderID: "okta-prod",
+		ProviderGroupID:    "team-platform",
+		RoleRef:            wizapi.RoleRef{Name: "admin"},
+		ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
+	})
 
 	// Start the operator-impersonator goroutine before Execute so we
 	// never miss the first reconcile window.
@@ -200,20 +211,16 @@ func TestExecutor_Execute_HappyPath(t *testing.T) {
 func TestExecutor_Execute_Timeout(t *testing.T) {
 	c, ns := newTestClient(t)
 	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
-		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  500 * time.Millisecond,
 	})
 
-	res := exe.Execute(t.Context(), webhook.ApplySAMLGroupMapping{
-		IssueKey: "SEC-200",
-		Spec: wizapi.SAMLGroupMappingSpec{
-			IdentityProviderID: "okta-prod",
-			ProviderGroupID:    "team-platform",
-			RoleRef:            wizapi.RoleRef{Name: "admin"},
-			ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
-		},
-	})
+	res := exe.Execute(t.Context(), newSAMLApply("SEC-200", ns, &wizapi.SAMLGroupMappingSpec{
+		IdentityProviderID: "okta-prod",
+		ProviderGroupID:    "team-platform",
+		RoleRef:            wizapi.RoleRef{Name: "admin"},
+		ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
+	}))
 	if res.Kind != webhook.ResultTimeout {
 		t.Fatalf("Kind = %v (%s), want ResultTimeout", res.Kind, res.Reason)
 	}
@@ -229,7 +236,6 @@ func TestExecutor_Execute_Timeout(t *testing.T) {
 func TestExecutor_Execute_ReadyFalseIsTransient(t *testing.T) {
 	c, ns := newTestClient(t)
 	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
-		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  500 * time.Millisecond,
 	})
@@ -256,15 +262,12 @@ func TestExecutor_Execute_ReadyFalseIsTransient(t *testing.T) {
 		}
 	}()
 
-	res := exe.Execute(t.Context(), webhook.ApplySAMLGroupMapping{
-		IssueKey: "SEC-300",
-		Spec: wizapi.SAMLGroupMappingSpec{
-			IdentityProviderID: "okta-prod",
-			ProviderGroupID:    "team-platform",
-			RoleRef:            wizapi.RoleRef{Name: "admin"},
-			ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
-		},
-	})
+	res := exe.Execute(t.Context(), newSAMLApply("SEC-300", ns, &wizapi.SAMLGroupMappingSpec{
+		IdentityProviderID: "okta-prod",
+		ProviderGroupID:    "team-platform",
+		RoleRef:            wizapi.RoleRef{Name: "admin"},
+		ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
+	}))
 	if res.Kind != webhook.ResultTimeout {
 		t.Fatalf("Kind = %v (%s), want ResultTimeout (Ready=False must NOT terminate)", res.Kind, res.Reason)
 	}
@@ -277,20 +280,16 @@ func TestExecutor_Execute_ReadyFalseIsTransient(t *testing.T) {
 func TestExecutor_Execute_InvalidSpec(t *testing.T) {
 	c, ns := newTestClient(t)
 	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
-		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  2 * time.Second,
 	})
 
-	res := exe.Execute(t.Context(), webhook.ApplySAMLGroupMapping{
-		IssueKey: "SEC-400",
-		Spec: wizapi.SAMLGroupMappingSpec{
-			IdentityProviderID: "", // violates minLength: 1
-			ProviderGroupID:    "team-platform",
-			RoleRef:            wizapi.RoleRef{Name: "admin"},
-			ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
-		},
-	})
+	res := exe.Execute(t.Context(), newSAMLApply("SEC-400", ns, &wizapi.SAMLGroupMappingSpec{
+		IdentityProviderID: "", // violates minLength: 1
+		ProviderGroupID:    "team-platform",
+		RoleRef:            wizapi.RoleRef{Name: "admin"},
+		ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
+	}))
 	if res.Kind != webhook.ResultUnprocessable {
 		t.Fatalf("Kind = %v (%s), want ResultUnprocessable", res.Kind, res.Reason)
 	}
@@ -302,25 +301,22 @@ func TestExecutor_Execute_InvalidSpec(t *testing.T) {
 func TestExecutor_Execute_Idempotent(t *testing.T) {
 	c, ns := newTestClient(t)
 	exe := webhook.NewExecutor(c, nil, nil, webhook.ExecutorConfig{
-		Namespace:    ns,
 		FieldManager: "webhookd-test",
 		SyncTimeout:  2 * time.Second,
 		// Pin Now so the applied-at annotation is identical between
 		// calls — otherwise SSA would bump generation each apply.
 		Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 	})
-	act := webhook.ApplySAMLGroupMapping{
-		IssueKey: "SEC-500",
-		Spec: wizapi.SAMLGroupMappingSpec{
-			IdentityProviderID: "okta-prod",
-			ProviderGroupID:    "team-platform",
-			RoleRef:            wizapi.RoleRef{Name: "admin"},
-			ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
-		},
+	spec := &wizapi.SAMLGroupMappingSpec{
+		IdentityProviderID: "okta-prod",
+		ProviderGroupID:    "team-platform",
+		RoleRef:            wizapi.RoleRef{Name: "admin"},
+		ProjectRefs:        []wizapi.ProjectRef{{Name: "core"}},
 	}
 
 	// First apply: timeout is fine; we only care that the CR lands.
-	_ = exe.Execute(t.Context(), act)
+	// Build a fresh Action per call — Object is shared mutable state.
+	_ = exe.Execute(t.Context(), newSAMLApply("SEC-500", ns, spec))
 
 	got1 := &wizapi.SAMLGroupMapping{}
 	if err := c.Get(t.Context(),
@@ -330,7 +326,7 @@ func TestExecutor_Execute_Idempotent(t *testing.T) {
 	gen1 := got1.Generation
 
 	// Second apply with identical inputs.
-	_ = exe.Execute(t.Context(), act)
+	_ = exe.Execute(t.Context(), newSAMLApply("SEC-500", ns, spec))
 
 	got2 := &wizapi.SAMLGroupMapping{}
 	if err := c.Get(t.Context(),

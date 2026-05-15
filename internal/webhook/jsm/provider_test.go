@@ -11,6 +11,7 @@ import (
 
 	"github.com/donaldgifford/webhookd/internal/webhook"
 	"github.com/donaldgifford/webhookd/internal/webhook/jsm"
+	"github.com/donaldgifford/webhookd/internal/webhook/wizapi"
 )
 
 const (
@@ -26,6 +27,7 @@ func newTestProvider(_ *testing.T) *jsm.Provider {
 		FieldRole:            fidRole,
 		FieldProject:         fidProject,
 		IdentityProviderID:   "okta-prod",
+		Namespace:            "wiz-operator",
 		Signature: jsm.SignatureConfig{
 			SecretBytes: []byte("topsecret"),
 			SigHeader:   "X-Webhook-Signature",
@@ -86,27 +88,49 @@ func TestProvider_Handle_ApplyOnTriggerStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle err = %v, want nil", err)
 	}
-	apply, ok := act.(webhook.ApplySAMLGroupMapping)
+	apply, ok := act.(webhook.ApplyAction)
 	if !ok {
-		t.Fatalf("Handle = %T, want ApplySAMLGroupMapping", act)
+		t.Fatalf("Handle = %T, want ApplyAction", act)
 	}
-	if apply.IssueKey != "SEC-100" {
-		t.Errorf("IssueKey = %q, want SEC-100", apply.IssueKey)
+	if apply.Kind != "SAMLGroupMapping" {
+		t.Errorf("Kind = %q, want SAMLGroupMapping", apply.Kind)
 	}
-	if apply.Spec.IdentityProviderID != "okta-prod" {
-		t.Errorf("IdentityProviderID = %q, want okta-prod", apply.Spec.IdentityProviderID)
+	if apply.Source != "jsm" {
+		t.Errorf("Source = %q, want jsm", apply.Source)
 	}
-	if apply.Spec.ProviderGroupID != "team-platform" {
-		t.Errorf("ProviderGroupID = %q, want team-platform", apply.Spec.ProviderGroupID)
+	if got := apply.Annotations[jsm.AnnotationIssue]; got != "SEC-100" {
+		t.Errorf("Annotations[%s] = %q, want SEC-100", jsm.AnnotationIssue, got)
 	}
-	if apply.Spec.RoleRef.Name != "admin" {
-		t.Errorf("RoleRef.Name = %q, want admin", apply.Spec.RoleRef.Name)
+	if apply.Object.GetName() != "jsm-sec-100" {
+		t.Errorf("Object.Name = %q, want jsm-sec-100", apply.Object.GetName())
 	}
-	if len(apply.Spec.ProjectRefs) != 1 || apply.Spec.ProjectRefs[0].Name != "core" {
-		t.Errorf("ProjectRefs = %+v, want [{core}]", apply.Spec.ProjectRefs)
+	if apply.Object.GetNamespace() != "wiz-operator" {
+		t.Errorf("Object.Namespace = %q, want wiz-operator", apply.Object.GetNamespace())
 	}
-	if apply.Spec.Description != "Provisioned from JSM SEC-100" {
-		t.Errorf("Description = %q, want %q", apply.Spec.Description, "Provisioned from JSM SEC-100")
+	cr, ok := apply.Object.(*wizapi.SAMLGroupMapping)
+	if !ok {
+		t.Fatalf("Object = %T, want *wizapi.SAMLGroupMapping", apply.Object)
+	}
+	if cr.Spec.IdentityProviderID != "okta-prod" {
+		t.Errorf("IdentityProviderID = %q, want okta-prod", cr.Spec.IdentityProviderID)
+	}
+	if cr.Spec.ProviderGroupID != "team-platform" {
+		t.Errorf("ProviderGroupID = %q, want team-platform", cr.Spec.ProviderGroupID)
+	}
+	if cr.Spec.RoleRef.Name != "admin" {
+		t.Errorf("RoleRef.Name = %q, want admin", cr.Spec.RoleRef.Name)
+	}
+	if len(cr.Spec.ProjectRefs) != 1 || cr.Spec.ProjectRefs[0].Name != "core" {
+		t.Errorf("ProjectRefs = %+v, want [{core}]", cr.Spec.ProjectRefs)
+	}
+	if cr.Spec.Description != "Provisioned from JSM SEC-100" {
+		t.Errorf("Description = %q, want %q", cr.Spec.Description, "Provisioned from JSM SEC-100")
+	}
+	if _, ok := apply.ListObject.(*wizapi.SAMLGroupMappingList); !ok {
+		t.Errorf("ListObject = %T, want *wizapi.SAMLGroupMappingList", apply.ListObject)
+	}
+	if apply.ReadyCheck == nil {
+		t.Error("ReadyCheck = nil, want non-nil closure")
 	}
 }
 

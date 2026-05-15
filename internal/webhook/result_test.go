@@ -59,10 +59,10 @@ func TestResultKind_String(t *testing.T) {
 	}
 }
 
-// Compile-time guard that both NoopAction and ApplySAMLGroupMapping
-// satisfy the Action interface. Lives at package scope rather than in
-// a test function so a regression fails compilation, not just `go test`.
+// Compile-time guard that both NoopAction and ApplyAction satisfy the
+// Action interface. Lives at package scope rather than in a test
+// function so a regression fails compilation, not just `go test`.
 var (
 	_ webhook.Action = webhook.NoopAction{}
-	_ webhook.Action = webhook.ApplySAMLGroupMapping{}
+	_ webhook.Action = webhook.ApplyAction{}
 )

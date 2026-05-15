@@ -31,10 +31,10 @@
       "matchManagers": ["github-actions"],
       "matchPackageNames": [
         "azure/setup-helm",
+        "d3adb5/helm-unittest-action",
         "helm/chart-releaser-action",
         "helm/chart-testing-action",
         "helm/kind-action",
-        "helm-unittest/helm-unittest-action",
         "losisin/helm-docs-github-action"
       ],
       "matchUpdateTypes": ["patch"],
