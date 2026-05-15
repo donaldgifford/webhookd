@@ -6,6 +6,11 @@
 // Walk1.md §2: config → observability → handlers → servers → run loop.
 // Every package below this binary is single-purpose; main is the only
 // file allowed to know about more than one of them.
+//
+// Side-effect imports below register integrations with
+// webhook.DefaultRegistry at init() time. main.go knows providers by
+// name only — adding a second one is one new package + one new import
+// line. See ADR-0010 + INV-0003 §F-05.
 package main
 
 import (
@@ -17,7 +22,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"slices"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -30,7 +34,7 @@ import (
 	"github.com/donaldgifford/webhookd/internal/k8s"
 	"github.com/donaldgifford/webhookd/internal/observability"
 	"github.com/donaldgifford/webhookd/internal/webhook"
-	"github.com/donaldgifford/webhookd/internal/webhook/jsm"
+	_ "github.com/donaldgifford/webhookd/internal/webhook/jsm"
 )
 
 // Build-time provenance, injected via
@@ -93,7 +97,7 @@ func run(ctx context.Context) error {
 	reg, metrics := observability.NewMetrics(cfg)
 
 	var dispatcher http.Handler
-	if slices.Contains(cfg.EnabledProviders, "jsm") {
+	if len(cfg.EnabledProviders) > 0 {
 		dispatcher, err = buildDispatcher(cfg, logger, metrics)
 		if err != nil {
 			return fmt.Errorf("dispatcher: %w", err)
@@ -187,11 +191,11 @@ func buildPublicHandler(
 	)
 }
 
-// buildDispatcher constructs the JSM provider, the K8s executor, and
-// the dispatcher that ties them together. The caller gates this on
-// `WEBHOOK_PROVIDERS` containing "jsm" — when JSM is disabled the
-// public handler falls back to a 503 tombstone, useful for Phase 1
-// integration tests that don't want to stand up Kubernetes.
+// buildDispatcher resolves cfg.EnabledProviders against
+// webhook.DefaultRegistry, constructs the K8s executor, and wires
+// them into a Dispatcher. The registry is populated at init() time
+// by side-effect imports above; main.go knows providers by name only.
+// See ADR-0010 + INV-0003 §F-05.
 func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observability.Metrics) (http.Handler, error) {
 	clients, err := k8s.NewClients(cfg)
 	if err != nil {
@@ -204,24 +208,17 @@ func buildDispatcher(cfg *config.Config, logger *slog.Logger, metrics *observabi
 			SyncTimeout:  cfg.CR.SyncTimeout,
 		})
 
-	provider := jsm.New(&jsm.Config{
-		TriggerStatus:        cfg.JSM.TriggerStatus,
-		FieldProviderGroupID: cfg.JSM.FieldProviderGroupID,
-		FieldRole:            cfg.JSM.FieldRole,
-		FieldProject:         cfg.JSM.FieldProject,
-		IdentityProviderID:   cfg.JSM.IdentityProviderID,
-		Namespace:            cfg.CR.Namespace,
-		Signature: jsm.SignatureConfig{
-			SecretBytes: cfg.SigningSecret,
-			SigHeader:   cfg.SignatureHeader,
-			TSHeader:    cfg.TimestampHeader,
-			Skew:        cfg.TimestampSkew,
-		},
+	providers, err := webhook.DefaultRegistry.Build(webhook.ProviderDeps{
+		Config:  cfg,
+		Logger:  logger,
 		Metrics: metrics,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	d := webhook.NewDispatcher(&webhook.DispatcherConfig{
-		Providers:    []webhook.Provider{provider},
+		Providers:    providers,
 		Executor:     executor,
 		Logger:       logger,
 		Metrics:      metrics,

@@ -106,10 +106,11 @@ These are the structural issues that will compound badly when adding a second Pr
 - Approach: Either fold `ResponseBuilder` into the `Provider` interface (each provider builds its own response) or key builders by `p.Name()` in `NewDispatcher` alongside `d.providers`. The wiring already pairs them at construction time — formalize the co-location.
 - **Resolution:** Folded `BuildResponse(res, traceID, requestID) any` into the `Provider` interface itself. The standalone `ResponseBuilder` interface, the `Dispatcher.responseBuilder` field, and `DispatcherConfig.ResponseBuilder` are all gone. `writeResponse` now takes the provider it's responding for and calls `prov.BuildResponse(...)` directly. Mock provider grows a `ResponseFunc` for tests that want to override the default response shape.
 
-**F-05 — Hardcoded provider construction in `main.go`** (high)
+**F-05 — Hardcoded provider construction in `main.go`** (high) — ✅ **Resolved in PR #18**
 - Location: `cmd/webhookd/main.go:195–231` (`buildDispatcher`).
 - Problem: There is no provider registry. Adding a second provider requires editing `main.go` to construct it and pass it through. The HCL-based static registration pattern proposed in ADR-0010 isn't reflected anywhere yet.
 - Approach: Introduce a registration interface — `webhook.RegisterProvider(name string, factory ProviderFactory)` — that integration packages call from `init()` (ADR-0010). `main.go` then iterates `cfg.EnabledProviders` and resolves each from the registry. This is the change ADR-0010 promised; it must land before a second provider.
+- **Resolution:** `internal/webhook/registry.go` introduces `Registry`, `ProviderFactory`, `ProviderDeps`, and a `DefaultRegistry` package singleton. `internal/webhook/jsm/init.go` calls `webhook.RegisterProvider("jsm", factory)` at package-init time. `main.go` imports `_ "internal/webhook/jsm"` as a side-effect import and resolves providers via `webhook.DefaultRegistry.Build(deps)` — main no longer constructs JSM directly. Tests cover unknown-provider errors, factory-error propagation, duplicate-registration panic, and empty-enabled-set returns no error. Adding a second provider is now one new package + one new blank-import line in main.
 
 **F-06 — `CRConfig` carries JSM/Wiz-specific `IdentityProviderID`** (medium → high under IMPL-0004) — ✅ **Resolved in PR #18**
 - Location: `internal/config/config.go:117–143`.
