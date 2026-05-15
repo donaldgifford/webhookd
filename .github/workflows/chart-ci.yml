@@ -41,9 +41,14 @@ jobs:
           version: v3.19.0
 
       - name: Run helm-unittest
-        uses: d3adb5/helm-unittest-action@v2
+        # Pinned to v2.5.0; @v2 floating tag is broken upstream because the
+        # action's default helm-version: "latest" requires a GitHub API call
+        # that needs a token. Renovate keeps the SHA + comment in sync.
+        uses: d3adb5/helm-unittest-action@850bc76597579183998069830d5fa8c3ef0ea34a # v2.5.0
         with:
           charts: charts/webhookd
+          helm-version: v3.19.0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   ct:
     name: chart-testing (lint + install on kind)
